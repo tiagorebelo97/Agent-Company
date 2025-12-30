@@ -1,0 +1,23 @@
+# Agent Company Configuration
+
+agents:
+  figma_designer:
+    name: "Figma Designer Agent"
+    enabled: true
+    description: "Designs applications and UI/UX mockups on Figma using MCP server"
+    config:
+      # MCP Server configuration
+      ws_url: "ws://localhost:3055"  # WebSocket server URL
+      channel: null  # Channel ID (get from Figma plugin, or set to auto-join)
+      # Legacy Figma API configuration (optional, MCP doesn't require it)
+      api_key: "${FIGMA_API_KEY}"
+      base_url: "https://api.figma.com/v1"
+      # Agent-specific settings
+      default_file_format: "figma"
+      auto_save: true
+
+# Global settings
+global:
+  log_level: "INFO"
+  workspace_path: "."
+  output_directory: "output"
