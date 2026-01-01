@@ -1,6 +1,10 @@
 # Core dependencies
 # Add agent-specific dependencies as needed
 
+# Agent communication
+playwright
+aiohttp
+
 # Figma MCP Client (for Figma Designer agent)
 websockets>=12.0
 

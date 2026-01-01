@@ -1,0 +1,457 @@
+[
+    {
+        "id": "pm",
+        "name": "Project Manager",
+        "role": "Task Orchestration",
+        "color": "#8b5cf6",
+        "emoji": "🎯",
+        "skills": [
+            "Task Decomposition",
+            "Priority Management",
+            "Timeline Tracking"
+        ],
+        "category": "management",
+        "mcps": [
+            "filesystem",
+            "git"
+        ],
+        "skipScaffold": true
+    },
+    {
+        "id": "design",
+        "name": "Design Agent",
+        "role": "UI/UX & Aesthetics",
+        "color": "#2B81FF",
+        "emoji": "🎨",
+        "skills": [
+            "Figma Integration",
+            "Component Design",
+            "Design Systems"
+        ],
+        "category": "design",
+        "mcps": [
+            "filesystem"
+        ],
+        "skipScaffold": true,
+        "customPath": "expert_design_agent/main_bridge.py"
+    },
+    {
+        "id": "accessibility",
+        "name": "Accessibility Agent",
+        "role": "WCAG Compliance",
+        "color": "#3b82f6",
+        "emoji": "♿",
+        "skills": [
+            "ARIA Labels",
+            "Screen Readers",
+            "Keyboard Nav"
+        ],
+        "category": "design"
+    },
+    {
+        "id": "frontend",
+        "name": "Frontend Engineer",
+        "role": "React & UI Implementation",
+        "color": "#06b6d4",
+        "emoji": "💻",
+        "skills": [
+            "React",
+            "State Management",
+            "Performance"
+        ],
+        "category": "development",
+        "mcps": [
+            "filesystem"
+        ],
+        "skipScaffold": true
+    },
+    {
+        "id": "backend",
+        "name": "Backend Engineer",
+        "role": "API & Server Logic",
+        "color": "#10b981",
+        "emoji": "⚙️",
+        "skills": [
+            "REST APIs",
+            "Database Design",
+            "Authentication"
+        ],
+        "category": "development",
+        "mcps": [
+            "filesystem"
+        ],
+        "skipScaffold": true
+    },
+    {
+        "id": "architecture",
+        "name": "Architecture Agent",
+        "role": "Microservices & System Design",
+        "color": "#7c3aed",
+        "emoji": "🏗️",
+        "skills": [
+            "Microservices",
+            "Service Mesh",
+            "Event-Driven Architecture",
+            "DDD",
+            "Kubernetes"
+        ],
+        "category": "development"
+    },
+    {
+        "id": "mobile",
+        "name": "Mobile Agent",
+        "role": "iOS/Android Development",
+        "color": "#a855f7",
+        "emoji": "📱",
+        "skills": [
+            "React Native",
+            "Mobile UI",
+            "App Store"
+        ],
+        "category": "development"
+    },
+    {
+        "id": "db",
+        "name": "Database Architect",
+        "role": "Schema & Optimization",
+        "color": "#a855f7",
+        "emoji": "🗄️",
+        "skills": [
+            "PostgreSQL",
+            "Migrations",
+            "Query Optimization"
+        ],
+        "category": "development"
+    },
+    {
+        "id": "performance",
+        "name": "Performance Agent",
+        "role": "Optimization & Profiling",
+        "color": "#f97316",
+        "emoji": "⚡",
+        "skills": [
+            "Bundle Optimization",
+            "Lazy Loading",
+            "Caching"
+        ],
+        "category": "development"
+    },
+    {
+        "id": "ecommerce",
+        "name": "E-commerce Agent",
+        "role": "Shopping & Payments",
+        "color": "#10b981",
+        "emoji": "🛒",
+        "skills": [
+            "Stripe",
+            "Inventory",
+            "Orders"
+        ],
+        "category": "development"
+    },
+    {
+        "id": "qa",
+        "name": "QA/Testing Agent",
+        "role": "Quality Assurance",
+        "color": "#14b8a6",
+        "emoji": "✅",
+        "skills": [
+            "Jest",
+            "Playwright",
+            "Accessibility"
+        ],
+        "category": "quality",
+        "mcps": [
+            "filesystem"
+        ]
+    },
+    {
+        "id": "review",
+        "name": "Code Review Agent",
+        "role": "Code Quality & Security",
+        "color": "#f43f5e",
+        "emoji": "👁️",
+        "skills": [
+            "Security Audits",
+            "Performance",
+            "Best Practices"
+        ],
+        "category": "quality"
+    },
+    {
+        "id": "security",
+        "name": "Security Agent",
+        "role": "Security & Compliance",
+        "color": "#dc2626",
+        "emoji": "🔒",
+        "skills": [
+            "Vulnerability Scanning",
+            "Penetration Testing",
+            "OWASP"
+        ],
+        "category": "quality"
+    },
+    {
+        "id": "monitoring",
+        "name": "Monitoring Agent",
+        "role": "System Monitoring",
+        "color": "#14b8a6",
+        "emoji": "👀",
+        "skills": [
+            "Metrics",
+            "Alerting",
+            "Incident Response"
+        ],
+        "category": "quality"
+    },
+    {
+        "id": "devops",
+        "name": "DevOps Agent",
+        "role": "CI/CD & Infrastructure",
+        "color": "#ec4899",
+        "emoji": "🚀",
+        "skills": [
+            "Docker",
+            "GitHub Actions",
+            "AWS"
+        ],
+        "category": "devops",
+        "mcps": [
+            "git",
+            "filesystem"
+        ]
+    },
+    {
+        "id": "backup",
+        "name": "Backup & Recovery Agent",
+        "role": "Data Protection",
+        "color": "#6366f1",
+        "emoji": "💾",
+        "skills": [
+            "Backups",
+            "Disaster Recovery",
+            "Versioning"
+        ],
+        "category": "devops"
+    },
+    {
+        "id": "cost",
+        "name": "Cost Optimization Agent",
+        "role": "Cloud Cost Management",
+        "color": "#eab308",
+        "emoji": "💰",
+        "skills": [
+            "Cost Analysis",
+            "Resource Optimization",
+            "Budgeting"
+        ],
+        "category": "devops"
+    },
+    {
+        "id": "research",
+        "name": "Research Agent",
+        "role": "Technology Research",
+        "color": "#f59e0b",
+        "emoji": "🔍",
+        "skills": [
+            "Web Search",
+            "Documentation",
+            "Best Practices"
+        ],
+        "category": "research",
+        "mcps": [
+            "browser"
+        ]
+    },
+    {
+        "id": "analyst",
+        "name": "Project Analyst",
+        "role": "Codebase Analysis",
+        "color": "#7c3aed",
+        "emoji": "🔬",
+        "skills": [
+            "Architecture Review",
+            "Dependency Mapping",
+            "Code Complexity"
+        ],
+        "category": "research",
+        "mcps": [
+            "filesystem"
+        ]
+    },
+    {
+        "id": "datascience",
+        "name": "Data Science Agent",
+        "role": "ML & Analytics",
+        "color": "#8b5cf6",
+        "emoji": "📊",
+        "skills": [
+            "Data Analysis",
+            "ML Models",
+            "Predictions"
+        ],
+        "category": "research"
+    },
+    {
+        "id": "docs",
+        "name": "Documentation Agent",
+        "role": "Technical Writing",
+        "color": "#6366f1",
+        "emoji": "📚",
+        "skills": [
+            "API Docs",
+            "Tutorials",
+            "README"
+        ],
+        "category": "content",
+        "mcps": [
+            "filesystem"
+        ]
+    },
+    {
+        "id": "content",
+        "name": "Content Writer Agent",
+        "role": "Content Creation",
+        "color": "#84cc16",
+        "emoji": "✍️",
+        "skills": [
+            "Blog Posts",
+            "SEO Writing",
+            "Copywriting"
+        ],
+        "category": "content"
+    },
+    {
+        "id": "seo",
+        "name": "SEO/Marketing Agent",
+        "role": "SEO & Content Strategy",
+        "color": "#22c55e",
+        "emoji": "📈",
+        "skills": [
+            "Keyword Research",
+            "Meta Tags",
+            "Analytics"
+        ],
+        "category": "content"
+    },
+    {
+        "id": "social",
+        "name": "Social Media Agent",
+        "role": "Social Management",
+        "color": "#ec4899",
+        "emoji": "📱",
+        "skills": [
+            "Content Scheduling",
+            "Engagement",
+            "Analytics"
+        ],
+        "category": "content"
+    },
+    {
+        "id": "email",
+        "name": "Email Agent",
+        "role": "Email Campaigns",
+        "color": "#3b82f6",
+        "emoji": "📧",
+        "skills": [
+            "Templates",
+            "Deliverability",
+            "A/B Testing"
+        ],
+        "category": "content"
+    },
+    {
+        "id": "nlp",
+        "name": "NLP Agent",
+        "role": "Natural Language Processing",
+        "color": "#06b6d4",
+        "emoji": "💬",
+        "skills": [
+            "Sentiment Analysis",
+            "Chatbots",
+            "Translation"
+        ],
+        "category": "ai"
+    },
+    {
+        "id": "scheduler",
+        "name": "Scheduler Agent",
+        "role": "Task Scheduling",
+        "color": "#8b5cf6",
+        "emoji": "⏰",
+        "skills": [
+            "Cron Jobs",
+            "Reminders",
+            "Automation"
+        ],
+        "category": "ai"
+    },
+    {
+        "id": "integration",
+        "name": "Integration Agent",
+        "role": "API Integration",
+        "color": "#ec4899",
+        "emoji": "🔌",
+        "skills": [
+            "Webhooks",
+            "Third-party APIs",
+            "Zapier"
+        ],
+        "category": "ai"
+    },
+    {
+        "id": "translation",
+        "name": "Translation Agent",
+        "role": "Internationalization",
+        "color": "#84cc16",
+        "emoji": "🌍",
+        "skills": [
+            "i18n",
+            "Localization",
+            "Multi-language"
+        ],
+        "category": "ai"
+    },
+    {
+        "id": "support",
+        "name": "Support Agent",
+        "role": "Customer Support",
+        "color": "#f59e0b",
+        "emoji": "🆘",
+        "skills": [
+            "Ticket Management",
+            "FAQ",
+            "Live Chat"
+        ],
+        "category": "ux"
+    },
+    {
+        "id": "onboarding",
+        "name": "Onboarding Agent",
+        "role": "User Onboarding",
+        "color": "#06b6d4",
+        "emoji": "🎓",
+        "skills": [
+            "Tutorials",
+            "Walkthroughs",
+            "Activation"
+        ],
+        "category": "ux"
+    },
+    {
+        "id": "media",
+        "name": "Video/Media Agent",
+        "role": "Media Processing",
+        "color": "#f43f5e",
+        "emoji": "🎥",
+        "skills": [
+            "Video Editing",
+            "Image Processing",
+            "Compression"
+        ],
+        "category": "ux",
+        "mcps": [
+            "filesystem"
+        ]
+    }
+]
