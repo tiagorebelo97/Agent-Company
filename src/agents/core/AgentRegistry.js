@@ -10,6 +10,8 @@
 
 import { EventEmitter } from 'events';
 import logger from '../../utils/logger.js';
+import prisma from '../../database/client.js';
+import messenger from '../../services/Messenger.js';
 
 class AgentRegistry extends EventEmitter {
     constructor() {
@@ -30,9 +32,47 @@ class AgentRegistry extends EventEmitter {
     /**
      * Register a new agent
      */
-    register(agent) {
+    async register(agent) {
         if (this.agents.has(agent.id)) {
-            throw new Error(`Agent ${agent.id} already registered`);
+            logger.debug(`Agent ${agent.id} already registered, updating...`);
+            // Optionally update existing agent instance meta if needed
+            this.agents.set(agent.id, agent);
+            return;
+        }
+
+        // Persist or update agent in DB
+        const status = agent.getStatus();
+        try {
+            await prisma.agent.upsert({
+                where: { id: agent.id },
+                update: {
+                    name: status.name,
+                    role: status.role,
+                    emoji: status.emoji,
+                    color: status.color,
+                    category: status.category,
+                    status: status.status,
+                    load: status.load,
+                    skills: JSON.stringify(status.skills),
+                    stats: JSON.stringify(status.stats),
+                    isReal: status.isReal
+                },
+                create: {
+                    id: agent.id,
+                    name: status.name,
+                    role: status.role,
+                    emoji: status.emoji,
+                    color: status.color,
+                    category: status.category,
+                    status: status.status,
+                    load: status.load,
+                    skills: JSON.stringify(status.skills),
+                    stats: JSON.stringify(status.stats),
+                    isReal: status.isReal
+                }
+            });
+        } catch (error) {
+            logger.error(`Failed to persist agent ${agent.id} to DB:`, error);
         }
 
         this.agents.set(agent.id, agent);
@@ -153,15 +193,13 @@ class AgentRegistry extends EventEmitter {
      * Route message between agents
      */
     async routeMessage(messageData) {
-        const targetAgent = this.getAgent(messageData.to);
-
-        if (!targetAgent) {
-            logger.error(`Cannot route message: Agent ${messageData.to} not found`);
-            return;
-        }
-
         try {
-            await targetAgent.receiveMessage(messageData);
+            await messenger.sendMessage(
+                messageData.from || 'system',
+                messageData.to,
+                messageData.message || messageData.content,
+                messageData.type || 'chat'
+            );
         } catch (error) {
             logger.error(`Error routing message to ${messageData.to}:`, error);
         }

@@ -8,11 +8,12 @@ from base_agent import PythonBaseAgent
 from features.docker import DockerSkill
 from features.git_hub_actions import GitHubActionsSkill
 from features.a_w_s import AWSSkill
+from features.shell_execution import ShellExecutionSkill
 
 class DevopsAgent(PythonBaseAgent):
     def __init__(self):
         super().__init__('devops', 'DevOps Agent')
-        self.skill_definitions = ["Docker", "GitHub Actions", "AWS"]
+        self.skill_definitions = ["Docker", "GitHub Actions", "AWS", "Shell Execution"]
         self.category = 'devops'
         self.skills_registry = {}
         
@@ -20,6 +21,7 @@ class DevopsAgent(PythonBaseAgent):
         self.skills_registry['Docker'] = DockerSkill(self)
         self.skills_registry['GitHub Actions'] = GitHubActionsSkill(self)
         self.skills_registry['AWS'] = AWSSkill(self)
+        self.skills_registry['Shell Execution'] = ShellExecutionSkill(self)
         
     def execute_task(self, task):
         task_type = task.get('type')
@@ -29,10 +31,10 @@ class DevopsAgent(PythonBaseAgent):
         self.update_status('working')
         
         # Try to match task to a skill
-        # Simple heuristic: matches word in description
         result = None
+        normalized_task = f"{task_type} {description}".lower().replace('_', ' ')
         for skill_name, skill_instance in self.skills_registry.items():
-            if skill_name.lower() in description.lower() or skill_name.lower() in task_type.lower():
+            if skill_name.lower() in normalized_task:
                 result = skill_instance.execute(task)
                 break
                 

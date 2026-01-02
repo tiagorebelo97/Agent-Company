@@ -4,11 +4,13 @@
         "name": "Project Manager",
         "role": "Task Orchestration",
         "color": "#8b5cf6",
-        "emoji": "🎯",
+        "emoji": "\ud83c\udfaf",
         "skills": [
             "Task Decomposition",
             "Priority Management",
-            "Timeline Tracking"
+            "Timeline Tracking",
+            "Roadmap Planning",
+            "Phase Coordination"
         ],
         "category": "management",
         "mcps": [
@@ -18,33 +20,56 @@
         "skipScaffold": true
     },
     {
+        "id": "architect",
+        "name": "Technical Architect",
+        "role": "Technical Planning & System Design",
+        "color": "#4f46e5",
+        "emoji": "\ud83d\udcd0",
+        "skills": [
+            "Technical Planning",
+            "System Architecture",
+            "Implementation Strategy",
+            "WebSocket Design",
+            "Database Schema"
+        ],
+        "category": "management",
+        "mcps": [
+            "filesystem"
+        ]
+    },
+    {
         "id": "design",
         "name": "Design Agent",
         "role": "UI/UX & Aesthetics",
         "color": "#2B81FF",
-        "emoji": "🎨",
+        "emoji": "\ud83c\udfa8",
         "skills": [
-            "Figma Integration",
+            "Design Systems",
             "Component Design",
-            "Design Systems"
+            "Color Theory",
+            "Typography",
+            "Micro-interactions",
+            "Loading States"
         ],
         "category": "design",
         "mcps": [
             "filesystem"
         ],
         "skipScaffold": true,
-        "customPath": "expert_design_agent/main_bridge.py"
+        "customPath": "src/agents/implementations/DesignAgent/main.py"
     },
     {
         "id": "accessibility",
         "name": "Accessibility Agent",
         "role": "WCAG Compliance",
         "color": "#3b82f6",
-        "emoji": "♿",
+        "emoji": "\u267f",
         "skills": [
             "ARIA Labels",
             "Screen Readers",
-            "Keyboard Nav"
+            "Keyboard Nav",
+            "Semantic HTML",
+            "Color Contrast"
         ],
         "category": "design"
     },
@@ -53,11 +78,14 @@
         "name": "Frontend Engineer",
         "role": "React & UI Implementation",
         "color": "#06b6d4",
-        "emoji": "💻",
+        "emoji": "\ud83d\udcbb",
         "skills": [
-            "React",
+            "React Hooks",
             "State Management",
-            "Performance"
+            "Component Architecture",
+            "Tailwind CSS",
+            "Real-time UI",
+            "WebSocket Client"
         ],
         "category": "development",
         "mcps": [
@@ -70,11 +98,14 @@
         "name": "Backend Engineer",
         "role": "API & Server Logic",
         "color": "#10b981",
-        "emoji": "⚙️",
+        "emoji": "\u2699\ufe0f",
         "skills": [
             "REST APIs",
-            "Database Design",
-            "Authentication"
+            "Socket.IO",
+            "Event Broadcasting",
+            "CORS Configuration",
+            "Express.js",
+            "Node.js"
         ],
         "category": "development",
         "mcps": [
@@ -87,13 +118,13 @@
         "name": "Architecture Agent",
         "role": "Microservices & System Design",
         "color": "#7c3aed",
-        "emoji": "🏗️",
+        "emoji": "\ud83c\udfd7\ufe0f",
         "skills": [
             "Microservices",
-            "Service Mesh",
             "Event-Driven Architecture",
-            "DDD",
-            "Kubernetes"
+            "Real-time Systems",
+            "WebSocket Architecture",
+            "Service Integration"
         ],
         "category": "development"
     },
@@ -102,11 +133,12 @@
         "name": "Mobile Agent",
         "role": "iOS/Android Development",
         "color": "#a855f7",
-        "emoji": "📱",
+        "emoji": "\ud83d\udcf1",
         "skills": [
             "React Native",
             "Mobile UI",
-            "App Store"
+            "App Store",
+            "Responsive Design"
         ],
         "category": "development"
     },
@@ -115,11 +147,13 @@
         "name": "Database Architect",
         "role": "Schema & Optimization",
         "color": "#a855f7",
-        "emoji": "🗄️",
+        "emoji": "\ud83d\uddc4\ufe0f",
         "skills": [
             "PostgreSQL",
+            "Prisma ORM",
             "Migrations",
-            "Query Optimization"
+            "Query Optimization",
+            "Data Modeling"
         ],
         "category": "development"
     },
@@ -128,11 +162,13 @@
         "name": "Performance Agent",
         "role": "Optimization & Profiling",
         "color": "#f97316",
-        "emoji": "⚡",
+        "emoji": "\u26a1",
         "skills": [
             "Bundle Optimization",
             "Lazy Loading",
-            "Caching"
+            "Caching",
+            "Animation Performance",
+            "Loading Skeletons"
         ],
         "category": "development"
     },
@@ -141,11 +177,12 @@
         "name": "E-commerce Agent",
         "role": "Shopping & Payments",
         "color": "#10b981",
-        "emoji": "🛒",
+        "emoji": "\ud83d\uded2",
         "skills": [
             "Stripe",
             "Inventory",
-            "Orders"
+            "Orders",
+            "Payment Processing"
         ],
         "category": "development"
     },
@@ -154,11 +191,13 @@
         "name": "QA/Testing Agent",
         "role": "Quality Assurance",
         "color": "#14b8a6",
-        "emoji": "✅",
+        "emoji": "\u2705",
         "skills": [
             "Jest",
             "Playwright",
-            "Accessibility"
+            "Component Testing",
+            "E2E Testing",
+            "Visual Regression"
         ],
         "category": "quality",
         "mcps": [
@@ -170,11 +209,12 @@
         "name": "Code Review Agent",
         "role": "Code Quality & Security",
         "color": "#f43f5e",
-        "emoji": "👁️",
+        "emoji": "\ud83d\udc41\ufe0f",
         "skills": [
             "Security Audits",
-            "Performance",
-            "Best Practices"
+            "Performance Review",
+            "Best Practices",
+            "Code Standards"
         ],
         "category": "quality"
     },
@@ -183,11 +223,13 @@
         "name": "Security Agent",
         "role": "Security & Compliance",
         "color": "#dc2626",
-        "emoji": "🔒",
+        "emoji": "\ud83d\udd12",
         "skills": [
             "Vulnerability Scanning",
             "Penetration Testing",
-            "OWASP"
+            "OWASP",
+            "CORS Security",
+            "XSS Prevention"
         ],
         "category": "quality"
     },
@@ -196,11 +238,13 @@
         "name": "Monitoring Agent",
         "role": "System Monitoring",
         "color": "#14b8a6",
-        "emoji": "👀",
+        "emoji": "\ud83d\udc40",
         "skills": [
             "Metrics",
             "Alerting",
-            "Incident Response"
+            "Incident Response",
+            "Real-time Monitoring",
+            "Log Analysis"
         ],
         "category": "quality"
     },
@@ -209,11 +253,13 @@
         "name": "DevOps Agent",
         "role": "CI/CD & Infrastructure",
         "color": "#ec4899",
-        "emoji": "🚀",
+        "emoji": "\ud83d\ude80",
         "skills": [
             "Docker",
             "GitHub Actions",
-            "AWS"
+            "AWS",
+            "Deployment",
+            "Environment Config"
         ],
         "category": "devops",
         "mcps": [
@@ -226,11 +272,12 @@
         "name": "Backup & Recovery Agent",
         "role": "Data Protection",
         "color": "#6366f1",
-        "emoji": "💾",
+        "emoji": "\ud83d\udcbe",
         "skills": [
             "Backups",
             "Disaster Recovery",
-            "Versioning"
+            "Versioning",
+            "Data Integrity"
         ],
         "category": "devops"
     },
@@ -239,11 +286,12 @@
         "name": "Cost Optimization Agent",
         "role": "Cloud Cost Management",
         "color": "#eab308",
-        "emoji": "💰",
+        "emoji": "\ud83d\udcb0",
         "skills": [
             "Cost Analysis",
             "Resource Optimization",
-            "Budgeting"
+            "Budgeting",
+            "Usage Monitoring"
         ],
         "category": "devops"
     },
@@ -252,11 +300,12 @@
         "name": "Research Agent",
         "role": "Technology Research",
         "color": "#f59e0b",
-        "emoji": "🔍",
+        "emoji": "\ud83d\udd0d",
         "skills": [
             "Web Search",
             "Documentation",
-            "Best Practices"
+            "Best Practices",
+            "Technology Trends"
         ],
         "category": "research",
         "mcps": [
@@ -268,11 +317,12 @@
         "name": "Project Analyst",
         "role": "Codebase Analysis",
         "color": "#7c3aed",
-        "emoji": "🔬",
+        "emoji": "\ud83d\udd2c",
         "skills": [
             "Architecture Review",
             "Dependency Mapping",
-            "Code Complexity"
+            "Code Complexity",
+            "Performance Analysis"
         ],
         "category": "research",
         "mcps": [
@@ -284,11 +334,12 @@
         "name": "Data Science Agent",
         "role": "ML & Analytics",
         "color": "#8b5cf6",
-        "emoji": "📊",
+        "emoji": "\ud83d\udcca",
         "skills": [
             "Data Analysis",
             "ML Models",
-            "Predictions"
+            "Predictions",
+            "Statistical Analysis"
         ],
         "category": "research"
     },
@@ -297,11 +348,13 @@
         "name": "Documentation Agent",
         "role": "Technical Writing",
         "color": "#6366f1",
-        "emoji": "📚",
+        "emoji": "\ud83d\udcda",
         "skills": [
             "API Docs",
             "Tutorials",
-            "README"
+            "README",
+            "Walkthroughs",
+            "Markdown"
         ],
         "category": "content",
         "mcps": [
@@ -313,11 +366,12 @@
         "name": "Content Writer Agent",
         "role": "Content Creation",
         "color": "#84cc16",
-        "emoji": "✍️",
+        "emoji": "\u270d\ufe0f",
         "skills": [
             "Blog Posts",
             "SEO Writing",
-            "Copywriting"
+            "Copywriting",
+            "Content Strategy"
         ],
         "category": "content"
     },
@@ -326,11 +380,12 @@
         "name": "SEO/Marketing Agent",
         "role": "SEO & Content Strategy",
         "color": "#22c55e",
-        "emoji": "📈",
+        "emoji": "\ud83d\udcc8",
         "skills": [
             "Keyword Research",
             "Meta Tags",
-            "Analytics"
+            "Analytics",
+            "SEO Optimization"
         ],
         "category": "content"
     },
@@ -339,11 +394,12 @@
         "name": "Social Media Agent",
         "role": "Social Management",
         "color": "#ec4899",
-        "emoji": "📱",
+        "emoji": "\ud83d\udce3",
         "skills": [
             "Content Scheduling",
             "Engagement",
-            "Analytics"
+            "Analytics",
+            "Community Management"
         ],
         "category": "content"
     },
@@ -352,11 +408,12 @@
         "name": "Email Agent",
         "role": "Email Campaigns",
         "color": "#3b82f6",
-        "emoji": "📧",
+        "emoji": "\ud83d\udce7",
         "skills": [
             "Templates",
             "Deliverability",
-            "A/B Testing"
+            "A/B Testing",
+            "Campaign Analytics"
         ],
         "category": "content"
     },
@@ -365,11 +422,12 @@
         "name": "NLP Agent",
         "role": "Natural Language Processing",
         "color": "#06b6d4",
-        "emoji": "💬",
+        "emoji": "\ud83d\udcac",
         "skills": [
             "Sentiment Analysis",
             "Chatbots",
-            "Translation"
+            "Translation",
+            "Text Processing"
         ],
         "category": "ai"
     },
@@ -378,11 +436,12 @@
         "name": "Scheduler Agent",
         "role": "Task Scheduling",
         "color": "#8b5cf6",
-        "emoji": "⏰",
+        "emoji": "\u23f0",
         "skills": [
             "Cron Jobs",
             "Reminders",
-            "Automation"
+            "Automation",
+            "Event Scheduling"
         ],
         "category": "ai"
     },
@@ -391,11 +450,12 @@
         "name": "Integration Agent",
         "role": "API Integration",
         "color": "#ec4899",
-        "emoji": "🔌",
+        "emoji": "\ud83d\udd0c",
         "skills": [
             "Webhooks",
             "Third-party APIs",
-            "Zapier"
+            "Zapier",
+            "API Connectors"
         ],
         "category": "ai"
     },
@@ -404,11 +464,12 @@
         "name": "Translation Agent",
         "role": "Internationalization",
         "color": "#84cc16",
-        "emoji": "🌍",
+        "emoji": "\ud83c\udf0d",
         "skills": [
             "i18n",
             "Localization",
-            "Multi-language"
+            "Multi-language",
+            "Cultural Adaptation"
         ],
         "category": "ai"
     },
@@ -417,11 +478,12 @@
         "name": "Support Agent",
         "role": "Customer Support",
         "color": "#f59e0b",
-        "emoji": "🆘",
+        "emoji": "\ud83c\udd98",
         "skills": [
             "Ticket Management",
             "FAQ",
-            "Live Chat"
+            "Live Chat",
+            "User Assistance"
         ],
         "category": "ux"
     },
@@ -430,11 +492,12 @@
         "name": "Onboarding Agent",
         "role": "User Onboarding",
         "color": "#06b6d4",
-        "emoji": "🎓",
+        "emoji": "\ud83c\udf93",
         "skills": [
             "Tutorials",
             "Walkthroughs",
-            "Activation"
+            "Activation",
+            "User Education"
         ],
         "category": "ux"
     },
@@ -443,15 +506,49 @@
         "name": "Video/Media Agent",
         "role": "Media Processing",
         "color": "#f43f5e",
-        "emoji": "🎥",
+        "emoji": "\ud83c\udfa5",
         "skills": [
             "Video Editing",
             "Image Processing",
-            "Compression"
+            "Compression",
+            "Media Optimization"
         ],
         "category": "ux",
         "mcps": [
             "filesystem"
         ]
+    },
+    {
+        "id": "swarm_analyst",
+        "name": "Swarm Analyst",
+        "role": "Swarm Intelligence & Optimization",
+        "color": "#8b5cf6",
+        "emoji": "\ud83e\udd16",
+        "skills": [
+            "Swarm Analysis",
+            "Agent Coordination",
+            "Performance Metrics",
+            "Optimization Strategies",
+            "Real-time Analytics"
+        ],
+        "category": "ai",
+        "mcps": [
+            "filesystem"
+        ]
+    },
+    {
+        "id": "realtime",
+        "name": "Real-time Systems Agent",
+        "role": "WebSocket & Live Data",
+        "color": "#10b981",
+        "emoji": "\ud83d\udd04",
+        "skills": [
+            "WebSocket Integration",
+            "Event Broadcasting",
+            "Real-time Updates",
+            "Socket.IO",
+            "Live Data Streams"
+        ],
+        "category": "development"
     }
 ]

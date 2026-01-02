@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 from base_agent import PythonBaseAgent
 from features.templates import TemplatesSkill
 from features.deliverability import DeliverabilitySkill
-from features.a_b_testing import A/BTestingSkill
+from features.a_b_testing import ABTestingSkill
 
 class EmailAgent(PythonBaseAgent):
     def __init__(self):
@@ -19,7 +19,7 @@ class EmailAgent(PythonBaseAgent):
         # Initialize Skills
         self.skills_registry['Templates'] = TemplatesSkill(self)
         self.skills_registry['Deliverability'] = DeliverabilitySkill(self)
-        self.skills_registry['A/B Testing'] = A/BTestingSkill(self)
+        self.skills_registry['A/B Testing'] = ABTestingSkill(self)
         
     def execute_task(self, task):
         task_type = task.get('type')

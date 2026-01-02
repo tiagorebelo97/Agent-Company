@@ -16,9 +16,9 @@ const RoadmapViewer = () => {
                 { name: '32-agent swarm architecture', status: 'done' },
                 { name: 'MCP integration', status: 'done' },
                 { name: 'Python-Node.js bridge', status: 'done' },
-                { name: 'Centralized state management', status: 'in-progress' },
-                { name: 'Event-driven messaging', status: 'todo' },
-                { name: 'Agent registry with monitoring', status: 'todo' },
+                { name: 'Centralized state management', status: 'done' },
+                { name: 'Event-driven messaging', status: 'done' },
+                { name: 'Agent registry with monitoring', status: 'in-progress' },
             ]
         },
         {
@@ -111,10 +111,10 @@ const RoadmapViewer = () => {
                 <div className="bg-slate-800/50 backdrop-blur rounded-xl p-6 border border-slate-700">
                     <div className="flex items-center justify-between mb-3">
                         <span className="text-slate-300 font-medium">Overall Progress</span>
-                        <span className="text-2xl font-bold text-white">21%</span>
+                        <span className="text-2xl font-bold text-white">35%</span>
                     </div>
                     <div className="w-full bg-slate-700 rounded-full h-3">
-                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3 rounded-full transition-all duration-500" style={{ width: '21%' }} />
+                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3 rounded-full transition-all duration-500" style={{ width: '35%' }} />
                     </div>
                     <div className="mt-4 grid grid-cols-4 gap-4 text-center">
                         <div>
@@ -143,8 +143,8 @@ const RoadmapViewer = () => {
                     <div
                         key={phase.id}
                         className={`bg-slate-800/50 backdrop-blur rounded-xl border transition-all duration-300 ${activePhase === phase.id
-                                ? 'border-blue-500 shadow-lg shadow-blue-500/20'
-                                : 'border-slate-700 hover:border-slate-600'
+                            ? 'border-blue-500 shadow-lg shadow-blue-500/20'
+                            : 'border-slate-700 hover:border-slate-600'
                             }`}
                         onClick={() => setActivePhase(phase.id)}
                     >
@@ -156,8 +156,8 @@ const RoadmapViewer = () => {
                                     <p className="text-sm text-slate-400">{phase.weeks}</p>
                                 </div>
                                 <div className={`px-3 py-1 rounded-full text-xs font-medium ${phase.status === 'done' ? 'bg-green-500/20 text-green-400' :
-                                        phase.status === 'in-progress' ? 'bg-blue-500/20 text-blue-400' :
-                                            'bg-slate-500/20 text-slate-400'
+                                    phase.status === 'in-progress' ? 'bg-blue-500/20 text-blue-400' :
+                                        'bg-slate-500/20 text-slate-400'
                                     }`}>
                                     {phase.status.replace('-', ' ').toUpperCase()}
                                 </div>

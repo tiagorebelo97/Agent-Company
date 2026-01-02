@@ -1,0 +1,99 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id          String   @id
+  name        String
+  role        String?
+  emoji       String?
+  color       String?
+  category    String?
+  status      String   @default("idle") // idle, busy, thinking, error, offline
+  load        Int      @default(0)
+  skills      String   // Stored as JSON string
+  stats       String?  // Stored as JSON string
+  isReal      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  tasks            TaskAgent[]
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+}
+
+model Task {
+  id           String   @id @default(uuid())
+  title        String
+  description  String?
+  status       String   @default("todo") // todo, in_progress, review, done
+  priority     String   @default("medium") // low, medium, high
+  tags         String   @default("[]") // JSON array of tags
+  dueDate      DateTime?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Agent execution fields
+  type         String?  // task type (e.g., "feature_implementation")
+  requirements String?  // JSON string with task requirements
+  result       String?  // JSON string with execution result
+  duration     Int?     // execution duration in ms
+  assignedToId String?  // primary assigned agent (for backwards compatibility)
+  
+  agents       TaskAgent[]
+  subtasks     Subtask[]
+  comments     Comment[]
+}
+
+model TaskAgent {
+  id         String   @id @default(uuid())
+  taskId     String
+  agentId    String
+  assignedAt DateTime @default(now())
+  
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  @@unique([taskId, agentId])
+}
+
+model Subtask {
+  id        String   @id @default(uuid())
+  taskId    String
+  title     String
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  taskId     String
+  content    String
+  authorId   String
+  authorName String?
+  createdAt  DateTime @default(now())
+  
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  fromId      String
+  fromAgent   Agent    @relation("SentMessages", fields: [fromId], references: [id])
+  toId        String
+  toAgent     Agent    @relation("ReceivedMessages", fields: [toId], references: [id])
+  content     String
+  timestamp   DateTime @default(now())
+  type        String   @default("chat") // chat, system, task_update
+}

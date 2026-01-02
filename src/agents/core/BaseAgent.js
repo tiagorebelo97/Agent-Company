@@ -13,6 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { spawn } from 'child_process';
 import path from 'path';
 import logger from '../../utils/logger.js';
+import messenger from '../../services/Messenger.js';
+import prisma from '../../database/client.js';
 
 export class BaseAgent extends EventEmitter {
     constructor(id, name, config = {}) {
@@ -56,7 +58,8 @@ export class BaseAgent extends EventEmitter {
         logger.info(`${this.name}: Starting Python agent at ${this.agentPath}`);
 
         this.pythonProcess = spawn('python', [this.agentPath], {
-            stdio: ['pipe', 'pipe', 'pipe']
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, PYTHONUTF8: '1' }
         });
 
         // Handle StdOut (JSON messages or logs)
@@ -94,8 +97,8 @@ export class BaseAgent extends EventEmitter {
      */
     async handlePythonMessage(message) {
         if (message.type === 'tool_call') {
-            // Python wants to call an MCP tool
-            await this.handleMCPToolCall(message);
+            // Handle tool calls from Python
+            await this.handleToolCall(message);
         } else if (message.type === 'response') {
             // Python responded to a request from Node
             const pending = this.pendingPythonRequests.get(message.requestId);
@@ -103,14 +106,106 @@ export class BaseAgent extends EventEmitter {
                 pending.resolve(message.result);
                 this.pendingPythonRequests.delete(message.requestId);
             }
-        } else if (message.type === 'log') {
-            logger.info(`${this.name} (Python): ${message.content}`);
         } else if (message.type === 'status_update') {
             this.status = message.status;
             this.updateLoad();
+            await this.updateExternalStatus(message.status);
+        } else if (message.type === 'progress_update') {
+            // Emit progress update via WebSocket
+            this.emit('task:progress', {
+                taskId: this.currentTaskId,
+                agentId: this.id,
+                agentName: this.name,
+                progress: message.progress,
+                activity: message.activity,
+                timestamp: new Date().toISOString()
+            });
+        } else if (message.type === 'activity_log') {
+            // Emit activity log via WebSocket
+            this.emit('task:activity', {
+                taskId: this.currentTaskId,
+                agentId: this.id,
+                agentName: this.name,
+                message: message.message,
+                timestamp: message.timestamp
+            });
+            // Also log to console
+            logger.info(`${this.name} (Python): ${message.message}`);
+        } else if (message.type === 'log') {
+            logger.info(`${this.name} (Python): ${message.content}`);
         } else if (message.type === 'assign_task') {
             // PM wants to assign a task to another agent
             await this.handleTaskAssignment(message);
+        }
+    }
+
+    /**
+     * Handle tool calls from Python agent
+     */
+    async handleToolCall(message) {
+        const { toolName, args, requestId } = message;
+
+        try {
+            let result;
+
+            // Import AgentFileSystem dynamically
+            const agentFileSystem = (await import('../utils/AgentFileSystem.js')).default;
+
+            // File system operations
+            if (toolName === 'file_system_read') {
+                const content = await agentFileSystem.readFile(args.agentId, args.filePath);
+                result = { success: true, content };
+            }
+            else if (toolName === 'file_system_write') {
+                result = await agentFileSystem.writeFile(
+                    args.agentId,
+                    args.filePath,
+                    args.content
+                );
+            }
+            else if (toolName === 'file_system_list') {
+                const files = await agentFileSystem.listFiles(args.agentId, args.dirPath);
+                result = { success: true, files };
+            }
+            else {
+                // Unknown tool
+                result = { success: false, error: `Unknown tool: ${toolName}` };
+            }
+
+            // Send response back to Python
+            this.sendToPython({
+                type: 'tool_response',
+                requestId,
+                result
+            });
+        } catch (error) {
+            logger.error(`${this.name}: Tool call failed: ${error.message}`);
+            this.sendToPython({
+                type: 'tool_response',
+                requestId,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Update status in database and registry
+     */
+    async updateExternalStatus(status) {
+        this.status = status;
+        this.updateLoad();
+
+        try {
+            await prisma.agent.update({
+                where: { id: this.id },
+                data: {
+                    status: this.status,
+                    load: this.load,
+                    stats: JSON.stringify(this.stats)
+                }
+            });
+        } catch (error) {
+            logger.error(`Failed to update DB status for agent ${this.id}:`, error);
         }
     }
 
@@ -197,6 +292,9 @@ export class BaseAgent extends EventEmitter {
         const taskId = task.id || uuidv4();
         const startTime = Date.now();
 
+        // Store current task ID for progress tracking
+        this.currentTaskId = taskId;
+
         this.status = 'busy';
         this.updateLoad();
 
@@ -217,13 +315,30 @@ export class BaseAgent extends EventEmitter {
                 task: { ...task, id: taskId }
             });
 
+            // Persist task to DB
+            try {
+                await prisma.task.create({
+                    data: {
+                        id: taskId,
+                        title: task.requirements?.title || task.description || 'Untitled Task',
+                        type: task.type,
+                        description: task.description,
+                        requirements: task.requirements ? JSON.stringify(task.requirements) : null,
+                        status: 'in_progress',
+                        assignedToId: this.id
+                    }
+                });
+            } catch (error) {
+                logger.error(`Failed to create task ${taskId} in DB:`, error);
+            }
+
             const result = await resultPromise;
 
             const duration = Date.now() - startTime;
-            this.completeTask(taskId, result, duration);
+            await this.completeTask(taskId, result, duration);
             return result;
         } catch (error) {
-            this.failTask(taskId, error);
+            await this.failTask(taskId, error);
             throw error;
         }
     }
@@ -244,6 +359,16 @@ export class BaseAgent extends EventEmitter {
      * Receive and handle a message from another agent or user
      */
     async receiveMessage(message) {
+        // Register with messenger for incoming messages
+        messenger.registerAgent(this.id, async (data) => {
+            // This handler is called when a message is routed via Redis
+            this.sendToPython({
+                type: 'handle_message',
+                requestId: ++this.requestId, // We don't wait for response in pub/sub mode usually
+                message: data
+            });
+        });
+
         const requestId = ++this.requestId;
         const resultPromise = new Promise((resolve, reject) => {
             this.pendingPythonRequests.set(requestId, { resolve, reject });
@@ -258,20 +383,43 @@ export class BaseAgent extends EventEmitter {
         return await resultPromise;
     }
 
-    completeTask(taskId, result, duration) {
-        this.status = 'idle';
+    async completeTask(taskId, result, duration) {
+        await this.updateExternalStatus('idle');
         this.stats.tasksCompleted++;
         this.updateStats(duration);
-        this.updateLoad();
+
+        try {
+            await prisma.task.update({
+                where: { id: taskId },
+                data: {
+                    status: 'completed',
+                    result: JSON.stringify(result),
+                    duration
+                }
+            });
+        } catch (error) {
+            logger.error(`Failed to update task ${taskId} in DB:`, error);
+        }
 
         this.emit('task:complete', { agentId: this.id, taskId, result, duration });
         logger.info(`${this.name}: Task ${taskId} completed`);
     }
 
-    failTask(taskId, error) {
-        this.status = 'idle';
+    async failTask(taskId, error) {
+        await this.updateExternalStatus('idle');
         this.stats.tasksFailed++;
-        this.updateLoad();
+
+        try {
+            await prisma.task.update({
+                where: { id: taskId },
+                data: {
+                    status: 'failed',
+                    error: error.message
+                }
+            });
+        } catch (error) {
+            logger.error(`Failed to update task ${taskId} in DB:`, error);
+        }
 
         this.emit('task:fail', { agentId: this.id, taskId, error: error.message });
         logger.error(`${this.name}: Task ${taskId} failed:`, error);
