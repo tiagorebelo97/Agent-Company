@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 from base_agent import PythonBaseAgent
 from features.i18n import i18nSkill
 from features.localization import LocalizationSkill
-from features.multilanguage import Multi-languageSkill
+from features.multilanguage import MultiLanguageSkill
 
 class TranslationAgent(PythonBaseAgent):
     def __init__(self):
@@ -19,7 +19,7 @@ class TranslationAgent(PythonBaseAgent):
         # Initialize Skills
         self.skills_registry['i18n'] = i18nSkill(self)
         self.skills_registry['Localization'] = LocalizationSkill(self)
-        self.skills_registry['Multi-language'] = Multi-languageSkill(self)
+        self.skills_registry['Multi-language'] = MultiLanguageSkill(self)
         
     def execute_task(self, task):
         task_type = task.get('type')

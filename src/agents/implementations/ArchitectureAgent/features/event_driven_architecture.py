@@ -1,5 +1,5 @@
 
-class Event-DrivenArchitectureSkill:
+class EventDrivenArchitectureSkill:
     def __init__(self, agent):
         self.agent = agent
         

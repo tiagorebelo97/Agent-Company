@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 from base_agent import PythonBaseAgent
 from features.microservices import MicroservicesSkill
 from features.service_mesh import ServiceMeshSkill
-from features.event_driven_architecture import Event-DrivenArchitectureSkill
+from features.event_driven_architecture import EventDrivenArchitectureSkill
 from features.d_d_d import DDDSkill
 from features.kubernetes import KubernetesSkill
 
@@ -21,7 +21,7 @@ class ArchitectureAgent(PythonBaseAgent):
         # Initialize Skills
         self.skills_registry['Microservices'] = MicroservicesSkill(self)
         self.skills_registry['Service Mesh'] = ServiceMeshSkill(self)
-        self.skills_registry['Event-Driven Architecture'] = Event-DrivenArchitectureSkill(self)
+        self.skills_registry['Event-Driven Architecture'] = EventDrivenArchitectureSkill(self)
         self.skills_registry['DDD'] = DDDSkill(self)
         self.skills_registry['Kubernetes'] = KubernetesSkill(self)
         

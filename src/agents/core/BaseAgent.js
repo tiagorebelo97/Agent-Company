@@ -298,7 +298,9 @@ export class BaseAgent extends EventEmitter {
         this.status = 'busy';
         this.updateLoad();
 
-        logger.info(`${this.name}: Delegating task ${taskId} to Python`);
+        logger.info(`[TASK ${taskId}] ========== STARTING EXECUTION ==========`);
+        logger.info(`[TASK ${taskId}] Agent: ${this.id} (${this.name})`);
+        logger.info(`[TASK ${taskId}] Delegating to Python bridge...`);
         this.emit('task:start', { agentId: this.id, taskId, task });
 
         try {
@@ -315,10 +317,15 @@ export class BaseAgent extends EventEmitter {
                 task: { ...task, id: taskId }
             });
 
-            // Persist task to DB
+            // Upsert task to DB (might be pre-created by Monitor or PM)
             try {
-                await prisma.task.create({
-                    data: {
+                await prisma.task.upsert({
+                    where: { id: taskId },
+                    update: {
+                        status: 'in_progress',
+                        assignedToId: this.id
+                    },
+                    create: {
                         id: taskId,
                         title: task.requirements?.title || task.description || 'Untitled Task',
                         type: task.type,
@@ -329,13 +336,38 @@ export class BaseAgent extends EventEmitter {
                     }
                 });
             } catch (error) {
-                logger.error(`Failed to create task ${taskId} in DB:`, error);
+                logger.error(`Failed to upsert task ${taskId} in DB:`, error);
             }
 
             const result = await resultPromise;
+            logger.info(`[TASK ${taskId}] Python result received:`, JSON.stringify(result, null, 2));
 
             const duration = Date.now() - startTime;
+
+            // Check if result is a delegation
+            if (result && (result.assigned_to || result.assignments || result.status === 'assigned')) {
+                logger.warn(`[TASK ${taskId}] ⚠️ Result is DELEGATION, not completion! Keeping status as in_progress.`);
+
+                // Update DB to reflect it's been coordinated but still ongoing
+                try {
+                    await prisma.task.update({
+                        where: { id: taskId },
+                        data: {
+                            result: JSON.stringify(result)
+                        }
+                    });
+                } catch (e) {
+                    logger.error(`[TASK ${taskId}] Failed to update delegation result:`, e);
+                }
+
+                // Move agent to idle so it can pick up other work
+                await this.updateExternalStatus('idle');
+                return result;
+            }
+
+            logger.info(`[TASK ${taskId}] Task execution finished with success. Marking as completed.`);
             await this.completeTask(taskId, result, duration);
+            logger.info(`[TASK ${taskId}] ========== EXECUTION COMPLETE ==========`);
             return result;
         } catch (error) {
             await this.failTask(taskId, error);

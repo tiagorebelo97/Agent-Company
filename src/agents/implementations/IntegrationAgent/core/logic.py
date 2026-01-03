@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 
 from base_agent import PythonBaseAgent
 from features.webhooks import WebhooksSkill
-from features.thirdparty_a_p_is import Third-partyAPIsSkill
+from features.thirdparty_a_p_is import ThirdPartyAPIsSkill
 from features.zapier import ZapierSkill
 
 class IntegrationAgent(PythonBaseAgent):
@@ -18,7 +18,7 @@ class IntegrationAgent(PythonBaseAgent):
         
         # Initialize Skills
         self.skills_registry['Webhooks'] = WebhooksSkill(self)
-        self.skills_registry['Third-party APIs'] = Third-partyAPIsSkill(self)
+        self.skills_registry['Third-party APIs'] = ThirdPartyAPIsSkill(self)
         self.skills_registry['Zapier'] = ZapierSkill(self)
         
     def execute_task(self, task):

@@ -186,6 +186,21 @@ app.post('/api/chat', async (req, res) => {
 });
 
 /**
+ * GET /
+ * Root route to guide users
+ */
+app.get('/', (req, res) => {
+    res.send(`
+        <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+            <h1>Agent-Company Backend</h1>
+            <p>The API is running, but this is not the main interface.</p>
+            <p>Please visit the <b>Dashboard</b> at:</p>
+            <a href="http://localhost:5173" style="font-size: 20px; color: #007bff; text-decoration: none;">http://localhost:5173</a>
+        </div>
+    `);
+});
+
+/**
  * GET /api/health
  * Health check endpoint
  */

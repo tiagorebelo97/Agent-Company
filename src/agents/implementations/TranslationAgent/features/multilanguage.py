@@ -1,5 +1,5 @@
 
-class Multi-languageSkill:
+class MultiLanguageSkill:
     def __init__(self, agent):
         self.agent = agent
         

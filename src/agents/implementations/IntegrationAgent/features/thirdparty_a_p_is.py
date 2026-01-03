@@ -1,5 +1,5 @@
 
-class Third-partyAPIsSkill:
+class ThirdPartyAPIsSkill:
     def __init__(self, agent):
         self.agent = agent
         
