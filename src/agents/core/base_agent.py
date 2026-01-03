@@ -179,3 +179,171 @@ class PythonBaseAgent(ABC):
     def handle_message(self, message):
         """To be implemented by subclasses"""
         pass
+
+    # ============================================
+    # Project File Access Methods (Real Files)
+    # ============================================
+    
+    def read_project_file(self, file_path):
+        """Read a file from the actual project (not sandboxed)"""
+        return self.call_mcp_tool(None, 'project_read_file', {'filePath': file_path})
+    
+    def write_project_file(self, file_path, content):
+        """Write a file to the actual project (not sandboxed)"""
+        return self.call_mcp_tool(None, 'project_write_file', {
+            'filePath': file_path,
+            'content': content
+        })
+    
+    def list_project_files(self, dir_path):
+        """List files in a project directory"""
+        return self.call_mcp_tool(None, 'project_list_files', {'dirPath': dir_path})
+    
+    def run_command(self, command, cwd=None):
+        """Execute a shell command with safety controls"""
+        return self.call_mcp_tool(None, 'run_command', {
+            'command': command,
+            'cwd': cwd or '.'
+        })
+
+    # ============================================
+    # Code Generation Methods
+    # ============================================
+    
+    def generate_react_component(self, name, description, props=None, features=None):
+        """Generate a React component using EnhancedCodeGenerator"""
+        try:
+            from utils.EnhancedCodeGenerator import EnhancedCodeGenerator
+            generator = EnhancedCodeGenerator()
+            return generator.generate_react_component(name, description, props, features)
+        except Exception as e:
+            self.log(f"Component generation failed: {str(e)}")
+            return None
+    
+    def generate_api_endpoint(self, method, path, description, request_body=None, response=None):
+        """Generate an Express.js API endpoint"""
+        try:
+            from utils.EnhancedCodeGenerator import EnhancedCodeGenerator
+            generator = EnhancedCodeGenerator()
+            return generator.generate_api_endpoint(method, path, description, request_body, response)
+        except Exception as e:
+            self.log(f"Endpoint generation failed: {str(e)}")
+            return None
+    
+    # ============================================
+    # Agent Collaboration Methods
+    # ============================================
+    
+    def request_work_from(self, agent_id, task_spec, priority="medium"):
+        """Request work from another agent"""
+        from core.AgentProtocol import AgentProtocol
+        message = AgentProtocol.request_work(
+            from_agent_id=self.agent_id,
+            to_agent_id=agent_id,
+            task_spec=task_spec,
+            priority=priority
+        )
+        # Send via bridge (will be routed to target agent)
+        self.send_to_bridge({
+            'type': 'assign_task',
+            'targetAgent': agent_id,
+            'task': task_spec
+        })
+        return message
+    
+    def submit_work_to(self, agent_id, request_id, deliverable, tests_passed=True):
+        """Submit completed work to requesting agent"""
+        from core.AgentProtocol import AgentProtocol
+        message = AgentProtocol.submit_work(
+            from_agent_id=self.agent_id,
+            to_agent_id=agent_id,
+            request_id=request_id,
+            deliverable=deliverable,
+            tests_passed=tests_passed
+        )
+        self.send_to_bridge(message)
+        return message
+    
+    def request_review_from(self, agent_id, code, files):
+        """Request code review from another agent"""
+        from core.AgentProtocol import AgentProtocol
+        message = AgentProtocol.request_review(
+            from_agent_id=self.agent_id,
+            to_agent_id=agent_id,
+            code=code,
+            files=files
+        )
+        self.send_to_bridge(message)
+        return message
+
+    # ============================================
+    # Verification & Testing Methods
+    # ============================================
+    
+    def verify_component(self, component_path):
+        """Verify a React component for errors and best practices"""
+        try:
+            from utils.AgentVerifier import AgentVerifier
+            verifier = AgentVerifier()
+            return verifier.verify_react_component(component_path)
+        except Exception as e:
+            self.log(f"Component verification failed: {str(e)}")
+            return {'valid': False, 'error': str(e)}
+    
+    def verify_endpoint(self, url, method="GET"):
+        """Test if an API endpoint works"""
+        try:
+            from utils.AgentVerifier import AgentVerifier
+            verifier = AgentVerifier()
+            return verifier.verify_api_endpoint(url, method)
+        except Exception as e:
+            self.log(f"Endpoint verification failed: {str(e)}")
+            return {'working': False, 'error': str(e)}
+    
+    def run_tests(self, test_pattern=None):
+        """Run automated tests"""
+        try:
+            from utils.AgentVerifier import AgentVerifier
+            verifier = AgentVerifier()
+            return verifier.run_tests(test_pattern)
+        except Exception as e:
+            self.log(f"Test execution failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    # ============================================
+    # Learning & Memory Methods
+    # ============================================
+    
+    def _get_memory(self):
+        """Get or create agent memory"""
+        if not hasattr(self, '_memory'):
+            from core.AgentMemory import AgentMemory
+            self._memory = AgentMemory(self.agent_id)
+        return self._memory
+    
+    def remember_success(self, task_type, description, approach, outcome, duration=None):
+        """Record a successful task completion for learning"""
+        memory = self._get_memory()
+        memory.record_success(task_type, description, approach, outcome, duration)
+        self.log(f"Recorded success: {task_type}")
+    
+    def remember_failure(self, task_type, description, approach, error, lessons=None):
+        """Record a failed attempt to learn from it"""
+        memory = self._get_memory()
+        memory.record_failure(task_type, description, approach, error, lessons)
+        self.log(f"Recorded failure: {task_type} - {error}")
+    
+    def learn_best_practice(self, category, practice, context=None):
+        """Store a discovered best practice"""
+        memory = self._get_memory()
+        memory.add_best_practice(category, practice, context)
+    
+    def recall_best_approach(self, task_type, similar_to=None):
+        """Retrieve the best known approach for a task"""
+        memory = self._get_memory()
+        return memory.get_best_approach(task_type, similar_to)
+    
+    def get_my_stats(self):
+        """Get performance statistics"""
+        memory = self._get_memory()
+        return memory.get_stats()

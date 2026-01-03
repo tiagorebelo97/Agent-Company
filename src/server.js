@@ -27,6 +27,7 @@ import messenger from './services/Messenger.js';
 import TaskMonitor from './agents/utils/TaskMonitor.js';
 import TaskHealthMonitor from './services/TaskHealthMonitor.js';
 import AgentHealthMonitor from './services/AgentHealthMonitor.js';
+import ProcessManager from './services/ProcessManager.js';
 import { validateTaskPayload, sanitizeStrings, requestLogger } from './middleware/validation.js';
 
 // Load environment variables
@@ -198,6 +199,163 @@ app.get('/', (req, res) => {
             <a href="http://localhost:5173" style="font-size: 20px; color: #007bff; text-decoration: none;">http://localhost:5173</a>
         </div>
     `);
+});
+
+/**
+ * POST /api/agents/:id/chat
+ * Send a message to an agent
+ */
+app.post('/api/agents/:id/chat', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message } = req.body;
+
+        if (!message || !message.trim()) {
+            return res.status(400).json({ success: false, error: 'Message is required' });
+        }
+
+        const agent = AgentRegistry.getAgent(id);
+        if (!agent) {
+            return res.status(404).json({ success: false, error: 'Agent not found' });
+        }
+
+        // 1. Persist User Message to DB
+        let userMessage;
+        try {
+            userMessage = await prisma.message.create({
+                data: {
+                    fromId: 'user', // We'll ensure 'user' agent exists
+                    toId: id,
+                    content: message.trim(),
+                    type: 'chat'
+                }
+            });
+        } catch (dbError) {
+            logger.error('Failed to save user message to DB:', dbError);
+            // Non-blocking for the chat itself
+        }
+
+        // Emit typing indicator
+        io.emit('agent:typing', { agentId: id, isTyping: true });
+
+        // Fetch recent history for context (last 10 messages)
+        const history = await prisma.message.findMany({
+            where: {
+                OR: [
+                    { fromId: id, toId: 'user' },
+                    { fromId: 'user', toId: id }
+                ]
+            },
+            orderBy: { timestamp: 'asc' },
+            take: 10
+        });
+
+        // Process message with actual agent intelligence
+        try {
+            let response;
+            try {
+                // Pass history context to the agent
+                const agentResponse = await agent.handleChatMessage(message.trim(), history);
+
+                if (agentResponse && agentResponse.response) {
+                    response = agentResponse.response;
+                } else if (agentResponse && agentResponse.success) {
+                    response = agentResponse.result || agentResponse.message || "I've processed your request.";
+                } else {
+                    throw new Error('No valid response from agent');
+                }
+            } catch (agentError) {
+                logger.warn(`Agent ${id} chat failed, using basic fallback:`, agentError.message);
+                response = `I'm ${agent.name}, but I'm having a technical issue. I heard: "${message.trim()}"`;
+            }
+
+            // 2. Persist Agent Response to DB
+            const agentMessage = {
+                id: `msg-${Date.now() + 1}`,
+                agentId: id,
+                sender: 'agent',
+                message: response,
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                await prisma.message.create({
+                    data: {
+                        fromId: id,
+                        toId: 'user',
+                        content: response,
+                        type: 'chat'
+                    }
+                });
+            } catch (dbError) {
+                logger.error('Failed to save agent response to DB:', dbError);
+            }
+
+            // Emit agent response via WebSocket
+            setTimeout(() => {
+                io.emit('agent:typing', { agentId: id, isTyping: false });
+                io.emit('agent:message', agentMessage);
+            }, 500 + Math.random() * 500);
+
+            logger.info(`Agent ${id} responded to chat.`);
+            res.json({ success: true, response });
+
+        } catch (error) {
+            io.emit('agent:typing', { agentId: id, isTyping: false });
+            throw error;
+        }
+
+    } catch (error) {
+        logger.error('Error in agent chat:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/agents/:id/chat/history
+ * Get conversation history with an agent
+ */
+app.get('/api/agents/:id/chat/history', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const agent = AgentRegistry.getAgent(id);
+        if (!agent) {
+            return res.status(404).json({ success: false, error: 'Agent not found' });
+        }
+
+        // Fetch messages from DB
+        const messages = await prisma.message.findMany({
+            where: {
+                OR: [
+                    { fromId: id, toId: 'user' },
+                    { fromId: 'user', toId: id }
+                ]
+            },
+            orderBy: { timestamp: 'asc' },
+            take: 50
+        });
+
+        // Map to format expected by the frontend
+        const formattedMessages = messages.map(msg => ({
+            id: msg.id,
+            agentId: id,
+            sender: msg.fromId === 'user' ? 'user' : 'agent',
+            message: msg.content,
+            timestamp: msg.timestamp
+        }));
+
+        res.json({
+            success: true,
+            messages: formattedMessages,
+            agentId: id,
+            agentName: agent.name
+        });
+
+    } catch (error) {
+        logger.error('Error fetching chat history:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 /**
@@ -773,6 +931,20 @@ async function startServer() {
         await prisma.$connect();
         logger.info('Database connected');
 
+        // Ensure "user" agent exists for foreign key constraints
+        await prisma.agent.upsert({
+            where: { id: 'user' },
+            update: {},
+            create: {
+                id: 'user',
+                name: 'The User',
+                role: 'Administrator',
+                status: 'active',
+                skills: '[]'
+            }
+        });
+        logger.info('System "user" agent verified');
+
         // 2. Initialize Redis & Messenger
         await messenger.init();
         logger.info('Messenger & Redis active');
@@ -798,12 +970,25 @@ async function startServer() {
         // 7. Setup Hot-Reload for agents.json
         setupAgentWatcher();
 
+        // 8. Validate port is free before starting
+        logger.info(`Checking if port ${PORT} is available...`);
+        const portInUse = await ProcessManager.isPortInUse(PORT);
+        if (portInUse) {
+            logger.error(`❌ Port ${PORT} is already in use!`);
+            logger.error('Run: npm run stop-all to clean up processes');
+            process.exit(1);
+        }
+
         // Start HTTP server
         httpServer.listen(PORT, () => {
             logger.info(`🚀 Server running on port ${PORT}`);
             logger.info(`📊 Dashboard: http://localhost:5173`);
             logger.info(`🔌 API: http://localhost:${PORT}/api`);
+            logger.info(`💡 Tip: Use 'npm run stop-all' to cleanly stop all processes`);
         });
+
+        // Register HTTP server for cleanup
+        ProcessManager.register(httpServer, 'HTTP Server');
 
     } catch (error) {
         logger.error('Failed to start server:', error);

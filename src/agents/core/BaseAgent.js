@@ -10,11 +10,15 @@
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs/promises';
 import logger from '../../utils/logger.js';
 import messenger from '../../services/Messenger.js';
 import prisma from '../../database/client.js';
+
+const execAsync = promisify(exec);
 
 export class BaseAgent extends EventEmitter {
     constructor(id, name, config = {}) {
@@ -166,6 +170,52 @@ export class BaseAgent extends EventEmitter {
             else if (toolName === 'file_system_list') {
                 const files = await agentFileSystem.listFiles(args.agentId, args.dirPath);
                 result = { success: true, files };
+            }
+            // Project file operations (real files)
+            else if (toolName === 'project_read_file') {
+                try {
+                    const projectRoot = process.cwd();
+                    const filePath = path.resolve(projectRoot, args.filePath);
+                    const content = await fs.readFile(filePath, 'utf-8');
+                    result = { success: true, content };
+                    logger.info(`${this.name}: Read project file: ${args.filePath}`);
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
+            }
+            else if (toolName === 'project_write_file') {
+                try {
+                    const projectRoot = process.cwd();
+                    const filePath = path.resolve(projectRoot, args.filePath);
+                    await fs.mkdir(path.dirname(filePath), { recursive: true });
+                    await fs.writeFile(filePath, args.content, 'utf-8');
+                    result = { success: true };
+                    logger.info(`${this.name}: Wrote project file: ${args.filePath}`);
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
+            }
+            else if (toolName === 'project_list_files') {
+                try {
+                    const projectRoot = process.cwd();
+                    const dirPath = path.resolve(projectRoot, args.dirPath);
+                    const files = await fs.readdir(dirPath);
+                    result = { success: true, files };
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
+            }
+            else if (toolName === 'run_command') {
+                try {
+                    const { stdout, stderr } = await execAsync(args.command, {
+                        cwd: args.cwd || process.cwd(),
+                        timeout: 30000
+                    });
+                    result = { success: true, stdout: stdout.trim(), stderr: stderr.trim() };
+                    logger.info(`${this.name}: Executed: ${args.command}`);
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
             }
             else {
                 // Unknown tool

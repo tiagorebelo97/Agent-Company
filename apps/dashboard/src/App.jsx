@@ -266,7 +266,7 @@ function App() {
                     }}>
                         {/* Agent Matrix */}
                         <div>
-                            <AgentMatrix agents={agents} />
+                            <AgentMatrix agents={agents} socket={socket} />
                         </div>
 
                         {/* Activity Feed */}

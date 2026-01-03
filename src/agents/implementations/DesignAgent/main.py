@@ -34,6 +34,12 @@ class DesignAgent(PythonBaseAgent):
             "message": f"Design processed {task_type} task"
         }
 
+    def _get_system_context(self) -> str:
+        return """You are the Design Agent AI in the Agent-Company platform.
+Your expertise: UI/UX design, aesthetic direction, component library management, and visual consistency.
+Style: Creative, observant, and user-centric.
+Respond naturally to design questions and help users create beautiful and functional interfaces."""
+
     def handle_message(self, message):
         return {"acknowledged": True, "agent": self.name}
 

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
+import AgentChatModal from './AgentChatModal';
 
-const AgentMatrix = ({ agents }) => {
+const AgentMatrix = ({ agents, socket }) => {
     const [filter, setFilter] = useState('all');
     const [search, setSearch] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedAgent, setSelectedAgent] = useState(null);
+    const [isChatOpen, setIsChatOpen] = useState(false);
 
     // Track loading state
     useEffect(() => {
@@ -214,6 +217,10 @@ const AgentMatrix = ({ agents }) => {
                     filteredAgents.map(agent => (
                         <div
                             key={agent.id}
+                            onClick={() => {
+                                setSelectedAgent(agent);
+                                setIsChatOpen(true);
+                            }}
                             style={{
                                 position: 'relative',
                                 padding: '28px',
@@ -351,6 +358,19 @@ const AgentMatrix = ({ agents }) => {
                     ))
                 )}
             </div>
+
+            {/* Agent Chat Modal */}
+            {selectedAgent && (
+                <AgentChatModal
+                    agent={selectedAgent}
+                    isOpen={isChatOpen}
+                    onClose={() => {
+                        setIsChatOpen(false);
+                        setSelectedAgent(null);
+                    }}
+                    socket={socket}
+                />
+            )}
         </div>
     );
 };
