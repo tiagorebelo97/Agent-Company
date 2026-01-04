@@ -37,13 +37,18 @@ const ActivityFeed = ({ socket, events: eventsProp }) => {
         });
 
         socket.on('agent:message', (data) => {
+            let messageContent = data.message || data.content;
+            if (messageContent && typeof messageContent === 'object' && messageContent.text) {
+                messageContent = messageContent.text;
+            }
+
             addEvent({
                 id: Date.now() + Math.random(),
                 type: 'message',
                 timestamp: new Date(),
-                agentId: data.from,
-                agentName: data.fromName || data.from,
-                message: data.content,
+                agentId: data.from || data.agentId,
+                agentName: data.fromName || data.agentName || data.from || data.agentId,
+                message: messageContent,
                 data: data
             });
         });
@@ -296,7 +301,7 @@ const ActivityFeed = ({ socket, events: eventsProp }) => {
                                             color: colors.textMain,
                                             lineHeight: '1.5'
                                         }}>
-                                            {event.message}
+                                            {typeof event.message === 'object' ? event.message.text : event.message}
                                         </p>
                                     </div>
                                 </div>

@@ -61,7 +61,11 @@ export class BaseAgent extends EventEmitter {
     async startPythonAgent() {
         logger.info(`${this.name}: Starting Python agent at ${this.agentPath}`);
 
-        this.pythonProcess = spawn('python', [this.agentPath], {
+        // Use virtual environment Python if available
+        const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python');
+        const pythonCmd = await fs.access(venvPython).then(() => venvPython).catch(() => 'python');
+
+        this.pythonProcess = spawn(pythonCmd, [this.agentPath], {
             stdio: ['pipe', 'pipe', 'pipe'],
             env: { ...process.env, PYTHONUTF8: '1' }
         });
@@ -137,6 +141,13 @@ export class BaseAgent extends EventEmitter {
             logger.info(`${this.name} (Python): ${message.message}`);
         } else if (message.type === 'log') {
             logger.info(`${this.name} (Python): ${message.content}`);
+        } else if (message.type === 'agent_message') {
+            // Proactive message from agent (like final report)
+            const content = message.content || {};
+            this.emit('agent:message', {
+                text: content.response || content.result || content.message || content,
+                interactive: content.interactive
+            });
         } else if (message.type === 'assign_task') {
             // PM wants to assign a task to another agent
             await this.handleTaskAssignment(message);
@@ -201,6 +212,17 @@ export class BaseAgent extends EventEmitter {
                     const dirPath = path.resolve(projectRoot, args.dirPath);
                     const files = await fs.readdir(dirPath);
                     result = { success: true, files };
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
+            }
+            else if (toolName === 'project_get') {
+                try {
+                    const project = await prisma.project.findUnique({
+                        where: { id: args.projectId },
+                        include: { tasks: { take: 10, orderBy: { createdAt: 'desc' } } }
+                    });
+                    result = { success: true, project };
                 } catch (err) {
                     result = { success: false, error: err.message };
                 }
@@ -271,9 +293,21 @@ export class BaseAgent extends EventEmitter {
         const agent = AgentRegistry.getAgent(targetAgent);
 
         if (agent) {
+            // Emit assignment event for UI
+            this.emit('task:assigned', {
+                taskId: task.id,
+                taskName: task.description,
+                agentId: targetAgent,
+                agentName: agent.name,
+                timestamp: new Date().toISOString()
+            });
+
+            // Inject parent agent ID for reporting back
+            const taskWithParent = { ...task, parentAgentId: this.id };
+
             // Execute task on target agent (async, don't wait)
-            agent.executeTask(task).then(result => {
-                logger.info(`Task ${task.id} completed by ${targetAgent}:`, result);
+            agent.executeTask(taskWithParent).then(result => {
+                logger.info(`Task ${task.id} completed by ${targetAgent}: ${JSON.stringify(result).substring(0, 50)}...`);
             }).catch(error => {
                 logger.error(`Task ${task.id} failed on ${targetAgent}:`, error);
             });
@@ -344,6 +378,8 @@ export class BaseAgent extends EventEmitter {
 
         // Store current task ID for progress tracking
         this.currentTaskId = taskId;
+        this.currentParentTaskId = task.parentTaskId || task.parent_task_id;
+        this.currentParentAgentId = task.parentAgentId;
 
         this.status = 'busy';
         this.updateLoad();
@@ -465,6 +501,30 @@ export class BaseAgent extends EventEmitter {
         return await resultPromise;
     }
 
+    /**
+     * Handle chat message from user (delegates to Python's handleChatMessage)
+     */
+    async handleChatMessage(message, history = null, taskId = null, projectId = null) {
+        if (taskId) this.currentTaskId = taskId;
+        const requestId = ++this.requestId;
+        const resultPromise = new Promise((resolve, reject) => {
+            this.pendingPythonRequests.set(requestId, { resolve, reject });
+            // Timeout after 60 seconds (allow for LLM retries)
+            setTimeout(() => reject(new Error('Chat message timeout')), 60000);
+        });
+
+        this.sendToPython({
+            type: 'handle_chat',
+            requestId,
+            message,
+            history,
+            taskId: this.currentTaskId,
+            projectId: projectId
+        });
+
+        return await resultPromise;
+    }
+
     async completeTask(taskId, result, duration) {
         await this.updateExternalStatus('idle');
         this.stats.tasksCompleted++;
@@ -484,6 +544,31 @@ export class BaseAgent extends EventEmitter {
         }
 
         this.emit('task:complete', { agentId: this.id, taskId, result, duration });
+
+        // REPORT BACK TO PARENT AGENT IF EXISTS
+        if (this.currentParentAgentId && this.currentParentAgentId !== this.id) {
+            import('./AgentRegistry.js').then(module => {
+                const AgentRegistry = module.default;
+                const parentAgent = AgentRegistry.getAgent(this.currentParentAgentId);
+                if (parentAgent) {
+                    logger.info(`${this.name}: Reporting task ${taskId} completion back to parent ${this.currentParentAgentId}`);
+                    parentAgent.receiveMessage({
+                        from: this.id,
+                        to: this.currentParentAgentId,
+                        message: `Subtarefa concluída: ${taskId}`,
+                        type: 'agent_task_complete',
+                        data: {
+                            taskId,
+                            parentTaskId: this.currentParentTaskId,
+                            result,
+                            agentId: this.id,
+                            agentName: this.name
+                        },
+                        timestamp: Date.now()
+                    });
+                }
+            });
+        }
         logger.info(`${this.name}: Task ${taskId} completed`);
     }
 

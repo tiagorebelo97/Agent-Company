@@ -3,15 +3,17 @@ import { io } from 'socket.io-client';
 import AgentMatrix from './components/AgentMatrix';
 import ActivityFeed from './components/ActivityFeed';
 import TaskBoard from './components/TaskBoard';
+import ProjectWorkspace from './components/ProjectWorkspace';
 import ConnectionStatus from './components/ConnectionStatus';
 import { ToastProvider } from './components/ToastProvider';
-import { Users, ListTodo } from 'lucide-react';
+import { Users, ListTodo, LayoutDashboard, Rocket, MessageSquare, BarChart3, Settings } from 'lucide-react';
 
 const API_URL = 'http://localhost:3001';
 const socket = io(API_URL);
 
 function App() {
     const [agents, setAgents] = useState([]);
+    const [projects, setProjects] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [events, setEvents] = useState(() => {
         try {
@@ -21,14 +23,13 @@ function App() {
             return [];
         }
     });
-    const [activeTab, setActiveTab] = useState('agents'); // 'agents' or 'tasks'
+    const [activeTab, setActiveTab] = useState('mission'); // default to mission control now
 
     const refreshTasks = () => {
         fetch(`${API_URL}/api/tasks`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    // Normalize tasks for UI
                     const normalizedTasks = data.tasks.map(t => ({
                         ...t,
                         status: t.status === 'completed' ? 'done' :
@@ -40,33 +41,44 @@ function App() {
             .catch(err => console.error('Failed to fetch tasks:', err));
     };
 
+    const refreshProjects = () => {
+        fetch(`${API_URL}/api/projects`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    setProjects(data.projects);
+                }
+            })
+            .catch(err => console.error('Failed to fetch projects:', err));
+    };
+
     useEffect(() => {
         localStorage.setItem('dashboard_events', JSON.stringify(events));
     }, [events]);
 
     useEffect(() => {
-        // Fetch initial agents
         fetch(`${API_URL}/api/agents`)
             .then(res => res.json())
             .then(data => {
-                if (data.success) {
-                    setAgents(data.agents);
-                }
-            })
-            .catch(err => console.error('Failed to fetch agents:', err));
+                if (data.success) setAgents(data.agents);
+            });
 
-        // Fetch initial tasks
+        refreshProjects();
         refreshTasks();
 
-        // --- Event Listeners for Persistence ---
         const handleEvent = (type, data, msgOverride) => {
+            let messageContent = msgOverride || data.message || data.content;
+            if (messageContent && typeof messageContent === 'object' && messageContent.text) {
+                messageContent = messageContent.text;
+            }
+
             const newEvent = {
                 id: Date.now() + Math.random(),
                 type,
                 timestamp: new Date(),
                 agentId: data.agentId || data.from,
                 agentName: data.agentName || data.fromName || data.from || data.agentId,
-                message: msgOverride || data.message || data.content,
+                message: messageContent,
                 data
             };
             setEvents(prev => [newEvent, ...prev].slice(0, 100));
@@ -85,11 +97,12 @@ function App() {
             handleEvent('status', data, `Status changed to ${data.status}`);
         });
 
-        // Task Events
         socket.on('task:created', (task) => {
             const normalized = { ...task, status: task.status === 'completed' ? 'done' : task.status };
             setTasks(prev => [normalized, ...prev]);
             handleEvent('task', { taskName: task.title, agentId: 'system' }, `New task created: ${task.title}`);
+            // Auto switch to mission control if it's an orchestration task
+            if (!task.parentTaskId) setActiveTab('mission');
         });
 
         socket.on('task:updated', (task) => {
@@ -105,16 +118,21 @@ function App() {
             handleEvent('task', { taskName: 'Task', agentId: 'system' }, `Task status updated: ${status}`);
         });
 
-        socket.on('task:deleted', ({ taskId }) => {
-            setTasks(prev => prev.filter(t => t.id !== taskId));
-        });
-
-        // Other Events
         socket.on('agent:message', (data) => handleEvent('message', data));
         socket.on('task:assigned', (data) => handleEvent('task', data, `Assigned task: ${data.taskName}`));
-        socket.on('system:notification', (data) => handleEvent('system', data));
-        socket.on('agent:registered', (data) => handleEvent('system', data, `New agent registered: ${data.name}`));
 
+        socket.on('project:created', (project) => {
+            setProjects(prev => [project, ...prev]);
+            handleEvent('system', {}, `New project created: ${project.name}`);
+        });
+
+        socket.on('project:updated', (project) => {
+            setProjects(prev => prev.map(p => p.id === project.id ? project : p));
+        });
+
+        socket.on('project:deleted', ({ id }) => {
+            setProjects(prev => prev.filter(p => p.id !== id));
+        });
 
         return () => {
             socket.off('agents:initial');
@@ -123,11 +141,11 @@ function App() {
             socket.off('task:created');
             socket.off('task:updated');
             socket.off('task:status_changed');
-            socket.off('task:deleted');
             socket.off('agent:message');
             socket.off('task:assigned');
-            socket.off('system:notification');
-            socket.off('agent:registered');
+            socket.off('project:created');
+            socket.off('project:updated');
+            socket.off('project:deleted');
         };
     }, []);
 
@@ -140,6 +158,13 @@ function App() {
         primary: '#2B81FF'
     };
 
+    const navigation = [
+        { id: 'mission', label: 'Projects', icon: Rocket, color: colors.primary },
+        { id: 'agents', label: 'Agent Workforce', icon: Users, color: '#8b5cf6' },
+        { id: 'tasks', label: 'Task Stream', icon: ListTodo, color: '#10b981' },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3, color: '#f59e0b' },
+    ];
+
     return (
         <ToastProvider>
             <div style={{
@@ -147,148 +172,105 @@ function App() {
                 backgroundColor: colors.bg,
                 color: 'white',
                 fontFamily: 'Inter, sans-serif',
-                padding: '48px'
+                display: 'flex'
             }}>
-                {/* Header */}
-                <div style={{ marginBottom: '48px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                {/* Fixed Sidebar */}
+                <div style={{
+                    width: '300px',
+                    height: '100vh',
+                    backgroundColor: colors.card,
+                    borderRight: `1px solid ${colors.border}`,
+                    padding: '40px 24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'sticky',
+                    top: 0
+                }}>
+                    {/* Brand */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '48px' }}>
                         <div style={{ fontSize: '32px' }}>🏢</div>
                         <div>
-                            <h1 style={{
-                                margin: 0,
-                                fontSize: '32px',
-                                fontWeight: 900,
-                                textTransform: 'uppercase',
-                                letterSpacing: '-0.02em'
-                            }}>
-                                Agent Company
-                            </h1>
-                            <p style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                color: colors.textMuted,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.1em',
-                                fontWeight: 600
-                            }}>
-                                Control Plane
-                            </p>
+                            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>Agent Company</h1>
+                            <p style={{ margin: 0, fontSize: '10px', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Control Plane</p>
                         </div>
                     </div>
+
+                    {/* Nav Items */}
+                    <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {navigation.map(item => (
+                            <button
+                                key={item.id}
+                                onClick={() => setActiveTab(item.id)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    padding: '14px 20px',
+                                    backgroundColor: activeTab === item.id ? `${item.color}15` : 'transparent',
+                                    color: activeTab === item.id ? item.color : colors.textMuted,
+                                    border: 'none',
+                                    borderRadius: '16px',
+                                    fontSize: '14px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    textAlign: 'left'
+                                }}
+                            >
+                                <item.icon size={20} />
+                                {item.label}
+                            </button>
+                        ))}
+                    </nav>
+
+                    {/* System Guard */}
+                    <div style={{ marginTop: 'auto', padding: '24px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '24px', border: `1px solid ${colors.border}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                            <span style={{ fontSize: '13px', fontWeight: 800, color: '#10b981' }}>Systems Operational</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>{agents.length} agents standing by.</p>
+                    </div>
                 </div>
 
-                {/* System Status */}
-                <div style={{
-                    marginBottom: '32px',
-                    padding: '24px',
-                    backgroundColor: colors.card,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '20px'
-                }}>
-                    <div style={{ fontSize: '11px', color: colors.textMuted, textTransform: 'uppercase', marginBottom: '8px', fontWeight: 800 }}>
-                        System Status
-                    </div>
-                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: '#10b981',
-                            display: 'inline-block'
-                        }} />
-                        All Systems Online
-                    </div>
-                    <div style={{ fontSize: '12px', color: colors.textMuted, marginTop: '8px' }}>
-                        {agents.length} Agents Active
-                    </div>
-                </div>
+                {/* Main Content Area */}
+                <div style={{ flex: 1, padding: '40px 48px', overflowX: 'hidden' }}>
 
-                {/* Tab Navigation */}
-                <div style={{
-                    display: 'flex',
-                    gap: '12px',
-                    marginBottom: '32px',
-                    padding: '8px',
-                    backgroundColor: colors.card,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '16px',
-                    width: 'fit-content'
-                }}>
-                    <button
-                        onClick={() => setActiveTab('agents')}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '12px 24px',
-                            backgroundColor: activeTab === 'agents' ? colors.primary : 'transparent',
-                            color: activeTab === 'agents' ? '#ffffff' : colors.textMuted,
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <Users size={18} />
-                        Agents
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('tasks')}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '12px 24px',
-                            backgroundColor: activeTab === 'tasks' ? colors.primary : 'transparent',
-                            color: activeTab === 'tasks' ? '#ffffff' : colors.textMuted,
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <ListTodo size={18} />
-                        Tasks
-                    </button>
-                </div>
+                    {activeTab === 'mission' && (
+                        <ProjectWorkspace
+                            agents={agents}
+                            tasks={tasks}
+                            projects={projects}
+                            events={events}
+                            socket={socket}
+                            refreshTasks={refreshTasks}
+                            refreshProjects={refreshProjects}
+                        />
+                    )}
 
-                {/* Main Content */}
-                {activeTab === 'agents' ? (
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 400px',
-                        gap: '32px',
-                        minHeight: '600px'
-                    }}>
-                        {/* Agent Matrix */}
-                        <div>
+                    {activeTab === 'agents' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '32px' }}>
                             <AgentMatrix agents={agents} socket={socket} />
-                        </div>
-
-                        {/* Activity Feed */}
-                        <div>
                             <ActivityFeed socket={socket} events={events} />
                         </div>
-                    </div>
-                ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '24px' }}>
-                        <TaskBoard agents={agents} tasks={tasks} onRefresh={refreshTasks} />
-                        {/* Activity Feed Persisted on Tasks View as well */}
-                        <div style={{
-                            height: 'calc(100vh - 200px)',
-                            position: 'sticky',
-                            top: '20px'
-                        }}>
+                    )}
+
+                    {activeTab === 'tasks' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '24px' }}>
+                            <TaskBoard agents={agents} tasks={tasks} onRefresh={refreshTasks} />
                             <ActivityFeed socket={socket} events={events} />
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* Connection Status Indicator */}
+                    {activeTab === 'analytics' && (
+                        <div style={{ textAlign: 'center', padding: '100px 0', color: colors.textMuted }}>
+                            <div style={{ fontSize: '64px', marginBottom: '24px' }}>📊</div>
+                            <h2>Workforce Analytics</h2>
+                            <p>Real-time performance metrics and token usage monitoring across the swarm.</p>
+                        </div>
+                    )}
+                </div>
+
                 <ConnectionStatus socket={socket} />
             </div>
         </ToastProvider>

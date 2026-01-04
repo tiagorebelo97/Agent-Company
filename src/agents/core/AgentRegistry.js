@@ -93,9 +93,11 @@ class AgentRegistry extends EventEmitter {
         this.agentsByCategory.get(category).push(agent);
 
         // Listen to agent events
+        agent.on('task:assigned', (data) => this.emit('agent:task:assigned', { agentId: agent.id, ...data }));
         agent.on('task:start', (data) => this.emit('agent:task:start', { agentId: agent.id, ...data }));
         agent.on('task:complete', (data) => this.emit('agent:task:complete', { agentId: agent.id, ...data }));
         agent.on('task:fail', (data) => this.emit('agent:task:fail', { agentId: agent.id, ...data }));
+        agent.on('agent:message', (data) => this.emit('agent:chat:message', { agentId: agent.id, ...data }));
         agent.on('message:send', (data) => this.routeMessage(data));
 
         logger.info(`Registered agent: ${agent.name} (${agent.id})`);

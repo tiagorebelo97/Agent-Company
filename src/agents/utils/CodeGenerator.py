@@ -6,19 +6,28 @@ Provides code generation capabilities for agents using Gemini (free tier availab
 
 import os
 from typing import List, Optional
-import google.generativeai as genai
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
 
 class CodeGenerator:
     """Generate code using Google Gemini API"""
     
     def __init__(self):
+        if not GENAI_AVAILABLE:
+            raise ValueError("google.generativeai not installed. Install with: pip install google-generativeai")
+        
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set")
         
         genai.configure(api_key=api_key)
-        # Use gemini-1.5-flash for fast, free code generation
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use gemini-2.5-flash for fast, free code generation
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
     
     def generate_react_component(self, 
                                  component_name: str,

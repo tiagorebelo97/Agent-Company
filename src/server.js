@@ -57,6 +57,153 @@ app.use((req, res, next) => {
 });
 
 // ============================================
+// Projects API Routes
+// ============================================
+
+/**
+ * GET /api/projects
+ * List all projects
+ */
+app.get('/api/projects', async (req, res) => {
+    try {
+        const { status, search } = req.query;
+        const where = {};
+        if (status) where.status = status;
+        if (search) {
+            where.OR = [
+                { name: { contains: search } },
+                { description: { contains: search } }
+            ];
+        }
+
+        const projects = await prisma.project.findMany({
+            where,
+            include: {
+                _count: {
+                    select: { tasks: true }
+                }
+            },
+            orderBy: { updatedAt: 'desc' }
+        });
+
+        logger.info(`Fetched ${projects.length} projects`);
+        res.json({ success: true, projects });
+    } catch (error) {
+        logger.error('Error fetching projects:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects
+ * Create a new project
+ */
+app.post('/api/projects', async (req, res) => {
+    try {
+        const { name, description, status, repoUrl, clientName, endDate } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'Project name is required' });
+        }
+
+        const project = await prisma.project.create({
+            data: {
+                name,
+                description,
+                status: status || 'active',
+                repoUrl,
+                clientName,
+                endDate: endDate ? new Date(endDate) : null
+            }
+        });
+
+        io.emit('project:created', project);
+        logger.info(`Project created: ${project.id} - ${project.name}`);
+        res.json({ success: true, project });
+    } catch (error) {
+        logger.error('Error creating project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/projects/:id
+ * Get project details with its tasks
+ */
+app.get('/api/projects/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({
+            where: { id },
+            include: {
+                tasks: {
+                    include: {
+                        agents: { include: { agent: true } },
+                        subtasks: true
+                    },
+                    orderBy: { createdAt: 'desc' }
+                }
+            }
+        });
+
+        if (!project) {
+            return res.status(404).json({ success: false, error: 'Project not found' });
+        }
+
+        res.json({ success: true, project });
+    } catch (error) {
+        logger.error('Error fetching project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/projects/:id
+ * Update project
+ */
+app.patch('/api/projects/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, status, repoUrl, clientName, endDate } = req.body;
+
+        const updateData = {};
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (status !== undefined) updateData.status = status;
+        if (repoUrl !== undefined) updateData.repoUrl = repoUrl;
+        if (clientName !== undefined) updateData.clientName = clientName;
+        if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+
+        const project = await prisma.project.update({
+            where: { id },
+            data: updateData
+        });
+
+        io.emit('project:updated', project);
+        res.json({ success: true, project });
+    } catch (error) {
+        logger.error('Error updating project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * DELETE /api/projects/:id
+ * Delete project
+ */
+app.delete('/api/projects/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.project.delete({ where: { id } });
+        io.emit('project:deleted', { id });
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error deleting project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
 // REST API Routes
 // ============================================
 
@@ -162,13 +309,24 @@ app.post('/api/chat', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Agent not found' });
         }
 
-        // Send message to agent
-        const response = await agent.receiveMessage({
-            from: 'user',
-            to: agent.id,
-            message,
-            timestamp: Date.now()
+        // Fetch recent history for context (last 10 messages)
+        const history = await prisma.message.findMany({
+            where: {
+                OR: [
+                    { fromId: agent.id, toId: 'user' },
+                    { fromId: 'user', toId: agent.id }
+                ]
+            },
+            orderBy: { timestamp: 'asc' },
+            take: 10
         });
+
+        // Send message to agent
+        const response = await agent.handleChatMessage(
+            typeof message === 'object' ? message.message : message,
+            history,
+            req.body.taskId
+        );
 
         res.json({
             success: true,
@@ -226,7 +384,7 @@ app.post('/api/agents/:id/chat', async (req, res) => {
                 data: {
                     fromId: 'user', // We'll ensure 'user' agent exists
                     toId: id,
-                    content: message.trim(),
+                    content: typeof message === 'object' ? JSON.stringify(message) : message.trim(),
                     type: 'chat'
                 }
             });
@@ -255,12 +413,18 @@ app.post('/api/agents/:id/chat', async (req, res) => {
             let response;
             try {
                 // Pass history context to the agent
-                const agentResponse = await agent.handleChatMessage(message.trim(), history);
+                const agentResponse = await agent.handleChatMessage(message.trim(), history, req.body.taskId);
 
                 if (agentResponse && agentResponse.response) {
-                    response = agentResponse.response;
+                    response = {
+                        text: agentResponse.response,
+                        interactive: agentResponse.interactive
+                    };
                 } else if (agentResponse && agentResponse.success) {
-                    response = agentResponse.result || agentResponse.message || "I've processed your request.";
+                    response = {
+                        text: agentResponse.result || agentResponse.message || "I've processed your request.",
+                        interactive: agentResponse.interactive
+                    };
                 } else {
                     throw new Error('No valid response from agent');
                 }
@@ -283,7 +447,7 @@ app.post('/api/agents/:id/chat', async (req, res) => {
                     data: {
                         fromId: id,
                         toId: 'user',
-                        content: response,
+                        content: typeof response === 'object' ? JSON.stringify(response) : response,
                         type: 'chat'
                     }
                 });
@@ -297,7 +461,7 @@ app.post('/api/agents/:id/chat', async (req, res) => {
                 io.emit('agent:message', agentMessage);
             }, 500 + Math.random() * 500);
 
-            logger.info(`Agent ${id} responded to chat.`);
+            logger.info(`Agent ${id} responded to chat: ${typeof response === 'object' ? response.text.substring(0, 50) : response.substring(0, 50)}...`);
             res.json({ success: true, response });
 
         } catch (error) {
@@ -446,11 +610,12 @@ app.post('/api/agents/:id/restart', async (req, res) => {
  */
 app.get('/api/tasks', async (req, res) => {
     try {
-        const { status, priority, agentId, search } = req.query;
+        const { status, priority, agentId, projectId, search } = req.query;
 
         const where = {};
         if (status) where.status = status;
         if (priority) where.priority = priority;
+        if (projectId) where.projectId = projectId;
 
         const tasks = await prisma.task.findMany({
             where,
@@ -505,7 +670,7 @@ app.get('/api/tasks', async (req, res) => {
  */
 app.post('/api/tasks', validateTaskPayload, async (req, res) => {
     try {
-        const { title, description, priority, status, tags, dueDate, agentIds, createdBy } = req.body;
+        const { title, description, priority, status, tags, dueDate, agentIds, createdBy, projectId } = req.body;
 
         if (!title) {
             return res.status(400).json({ success: false, error: 'Title is required' });
@@ -519,7 +684,8 @@ app.post('/api/tasks', validateTaskPayload, async (req, res) => {
                 status: status || 'todo',
                 tags: JSON.stringify(tags || []),
                 dueDate: dueDate ? new Date(dueDate) : null,
-                createdBy
+                createdBy,
+                projectId
             }
         });
 
@@ -590,7 +756,7 @@ app.post('/api/tasks', validateTaskPayload, async (req, res) => {
 app.patch('/api/tasks/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, priority, status, tags, dueDate, agentIds } = req.body;
+        const { title, description, priority, status, tags, dueDate, agentIds, projectId } = req.body;
 
         const updateData = {};
         if (title !== undefined) updateData.title = title;
@@ -599,6 +765,7 @@ app.patch('/api/tasks/:id', async (req, res) => {
         if (status !== undefined) updateData.status = status;
         if (tags !== undefined) updateData.tags = JSON.stringify(tags);
         if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+        if (projectId !== undefined) updateData.projectId = projectId;
 
         const task = await prisma.task.update({
             where: { id },
@@ -788,12 +955,23 @@ io.on('connection', (socket) => {
             const agent = AgentRegistry.getAgent(agentId || 'pm');
 
             if (agent) {
-                const response = await agent.receiveMessage({
-                    from: 'user',
-                    to: agent.id,
-                    message,
-                    timestamp: Date.now()
+                const history = await prisma.message.findMany({
+                    where: {
+                        OR: [
+                            { fromId: agent.id, toId: 'user' },
+                            { fromId: 'user', toId: agent.id }
+                        ]
+                    },
+                    orderBy: { timestamp: 'asc' },
+                    take: 10
                 });
+
+                const agentResponse = await agent.handleChatMessage(
+                    message,
+                    history,
+                    data.taskId,
+                    data.projectId
+                );
 
                 socket.emit('chat:response', {
                     agent: {
@@ -801,7 +979,10 @@ io.on('connection', (socket) => {
                         name: agent.name,
                         emoji: agent.emoji
                     },
-                    response
+                    response: {
+                        text: agentResponse.response || agentResponse.result || agentResponse.message,
+                        interactive: agentResponse.interactive
+                    }
                 });
             }
         } catch (error) {
@@ -852,6 +1033,10 @@ AgentRegistry.on('agent:registered', (agentStatus) => {
     io.emit('agent:registered', agentStatus);
 });
 
+AgentRegistry.on('agent:task:assigned', (data) => {
+    io.emit('task:assigned', data);
+});
+
 AgentRegistry.on('agent:task:start', (data) => {
     io.emit('agent:task:start', data);
 });
@@ -862,6 +1047,37 @@ AgentRegistry.on('agent:task:complete', (data) => {
 
 AgentRegistry.on('agent:task:fail', (data) => {
     io.emit('agent:task:fail', data);
+});
+
+AgentRegistry.on('agent:chat:message', async (data) => {
+    // Proactive agent message (like final report)
+    const agent = AgentRegistry.getAgent(data.agentId);
+    if (!agent) return;
+
+    const agentMessage = {
+        id: Date.now(),
+        fromId: data.agentId,
+        toId: 'user',
+        content: data.text,
+        interactive: data.interactive,
+        timestamp: new Date()
+    };
+
+    io.emit('agent:message', agentMessage);
+
+    // Persist to DB
+    try {
+        await prisma.message.create({
+            data: {
+                fromId: data.agentId,
+                toId: 'user',
+                content: typeof agentMessage.content === 'object' ? JSON.stringify(agentMessage.content) : String(agentMessage.content),
+                type: 'chat'
+            }
+        });
+    } catch (e) {
+        logger.error('Failed to persist proactive agent message:', e);
+    }
 });
 
 // ============================================

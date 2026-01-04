@@ -24,6 +24,8 @@ class ProjectManager(PythonBaseAgent):
         super().__init__('pm', 'Project Manager')
         self.projects = {}
         self.active_orchestrations = {}  # Track ongoing feature implementations
+        
+        # LLM Manager is automatically initialized by PythonBaseAgent
 
     def execute_task(self, task):
         """Enhanced task execution with feature detection"""
@@ -106,7 +108,9 @@ class ProjectManager(PythonBaseAgent):
                     task_spec={
                         'type': subtask['type'],
                         'description': subtask['desc'],
+                        'parentTaskId': task_id,
                         'parent_task_id': task_id,
+                        'projectId': getattr(self, 'current_project_id', None),
                         'requirements': subtask.get('requirements', {})
                     },
                     priority=subtask.get('priority', 'medium')
@@ -167,14 +171,23 @@ Description: {description}
 
 Create a list of subtasks with:
 - type: (frontend, backend, design, qa, etc.)
-- description: What needs to be done
+- description: Brief action (e.g., 'Implement User Auth API')
 - priority: (high, medium, low)
 - dependencies: Which subtasks must complete first
 
+CRITICAL- **English/ASCII Protocol**: ALWAYS use English and plain ASCII characters for technical IDs, file names, and task descriptions. NO special characters or Portuguese names for code assets.
+- **Concatenation**: Keep file names and task IDs short and professional (camelCase/PascalCase).
+- **Project CRM Management**: You are now in a CRM-style system. Projects (Company X, App Y) are long-lived entities.
+  - Use `/api/projects` (GET, POST, PATCH) to manage these high-level projects.
+  - When creating tasks, ALWAYS associate them with the relevant `projectId` if one exists.
+  - You can query tasks by `projectId` using `/api/tasks?projectId=XYZ`.
+  - Maintain the project the status and roadmap as a central command center.
+If a subtask involves creating a file, use brief PascalCase (e.g., UserProfile.jsx) or camelCase.
+4. Keep descriptions concise and technical.
+5. NO LONG SENTENCES as descriptions.
+
 Return as JSON array with format:
 [{{"type": "...", "desc": "...", "priority": "...", "dependencies": []}}]
-
-Focus on practical implementation steps. Be specific.
 """
             
             try:
@@ -326,20 +339,149 @@ Focus on practical implementation steps. Be specific.
         from datetime import datetime
         return datetime.utcnow().isoformat()
 
-    # Keep existing methods for compatibility
+    # ============================================
+    # Agent Collaboration & Reporting
+    # ============================================
+    
     def handle_message(self, message):
+        """Handle incoming messages (including task completions)"""
+        msg_type = message.get('type')
+        
+        if msg_type == 'agent_task_complete':
+            return self._handle_subtask_completion(message.get('data'))
+            
         return {'acknowledged': True, 'agent': self.name}
+
+    def _handle_subtask_completion(self, data):
+        """Track completion of delegated subtasks"""
+        task_id = data.get('taskId')
+        parent_id = data.get('parentTaskId')
+        agent_name = data.get('agentName')
+        
+        self.log(f"🏁 PM: Received completion for subtask {task_id} from {agent_name}")
+        
+        # Find the orchestration this task belongs to
+        # In this implementation, we might use parent_id as the orchestration_id
+        for orch_id, orch in self.active_orchestrations.items():
+            if orch_id == parent_id:
+                # Update subtask status
+                finished_count = 0
+                for delegation in orch['delegations']:
+                    if delegation['subtask_id'] == task_id or delegation['delegation'].get('id') == task_id:
+                        delegation['status'] = 'completed'
+                        delegation['result'] = data.get('result')
+                    
+                    if delegation.get('status') == 'completed':
+                        finished_count += 1
+                
+                self.log(f"📊 Orchestration '{orch['title']}': {finished_count}/{len(orch['delegations'])} completed")
+                
+                # Check if all done
+                if finished_count == len(orch['delegations']) and orch['status'] != 'reporting':
+                    orch['status'] = 'reporting'
+                    self.log(f"✅ PM: All subtasks for '{orch['title']}' completed! Generating final report...")
+                    self.generate_orchestration_report(orch_id)
+                
+                break
+        
+        return {'success': True}
+
+    def generate_orchestration_report(self, orch_id):
+        """Generate a final report for the user after orchestration is complete"""
+        orch = self.active_orchestrations.get(orch_id)
+        if not orch: return
+
+        title = orch['title']
+        results = []
+        for d in orch['delegations']:
+            results.append(f"Agent {d['agent']}: {d.get('result', {}).get('message', 'Concluído')}")
+
+        results_str = "\n".join(results)
+        prompt = f"""
+Gera um relatório final detalhado para o utilizador sobre a conclusão da funcionalidade: '{title}'.
+O trabalho foi decomposto e executado por vários agentes.
+
+Resultados por agente:
+{results_str}
+
+O relatório deve:
+1. Começar com um tom profissional e de sucesso.
+2. Resumir o que foi feito de forma clara (em Português).
+3. Listar as componentes principais que foram implementadas.
+4. Mostrar entusiasmo pelo resultado.
+5. Terminar com opções de 'Próximos Passos' ou 'Ver Ficheiros'.
+
+Formata como uma resposta de chat estruturada.
+"""
+        try:
+            # We use handleChatMessage with a special prompt to simulate the report
+            # but since we want it to be proactive, we send it via bridge as a new agent message
+            report_data = self.handleChatMessage(f"Relatório final para {title}: {prompt}")
+            
+            # Send as a proactive message to the chat
+            self.send_to_bridge({
+                'type': 'agent_message',
+                'content': report_data
+            })
+            
+            orch['status'] = 'completed'
+            self.log(f"📝 PM: Final report for '{title}' sent to user.")
+            
+        except Exception as e:
+            self.log(f"⚠️ Failed to generate report: {str(e)}")
 
     def _get_system_context(self) -> str:
         return """You are an enhanced Project Manager AI with autonomous orchestration capabilities.
 You can decompose complex features, delegate to specialized agents, and coordinate implementation.
 Be professional, concise, and proactive. Respond in the user's language."""
 
-    def handle_chat_message(self, user_message: str, history=None) -> dict:
-        """Handle chat with task deletion support"""
+    def handleChatMessage(self, user_message: str, history=None, task_id: str = None, project_id: str = None) -> dict:
+        """Handle chat with interactive selection support"""
         msg = user_message.lower()
         
-        # Task deletion
+        # 1. Handle selection confirmation from user
+        if user_message.startswith("Confirmado:"):
+            self.log(f"PM: User confirmed selection: {user_message[11:100]}...")
+            
+            # Extract what was confirmed for context
+            confirmed_details = user_message[11:]
+            
+            # Start the feature orchestration process
+            # We use the recent history to understand the original feature if possible
+            feature_title = "Feature from Chat"
+            feature_desc = confirmed_details
+            
+            if history:
+                # Look for the last user message before the interactive options (which would be the 3rd last message roughly)
+                # history order: [..., user_feature_request, assistant_options_prompt, user_confirmation]
+                for h in reversed(history):
+                    if h.get('fromId') == 'user' and not h.get('content', '').startswith("Confirmado:"):
+                        feature_title = h.get('content', '').split('\n')[0][:50]
+                        feature_desc = h.get('content', '') + "\n\nConfirmed details:\n" + confirmed_details
+                        break
+            
+            # Trigger the orchestration
+            orchestration_id = task_id or f"chat-{int(self._get_timestamp().split('T')[1].replace(':', '').split('.')[0])}"
+            orchestration_result = self.orchestrate_feature_implementation({
+                'id': orchestration_id,
+                'title': feature_title,
+                'description': feature_desc,
+                'type': 'feature'
+            })
+            
+            # Return a response that acknowledges the start of work
+            return self.send_interactive_list(
+                text=f"Excelente! Já dei início à implementação da feature: **{feature_title}**.\n\nDecompus o trabalho em {orchestration_result.get('subtasks', 0)} tarefas e deleguei para {orchestration_result.get('agents_assigned', 0)} agentes especializados. Podes acompanhar o progresso no painel de Tarefas.",
+                title="Ações em curso:",
+                items=[
+                    "Monitorizar progresso dos agentes",
+                    "Pedir relatório de estado",
+                    "Interromper implementação",
+                    "Adicionar mais requisitos"
+                ]
+            )
+
+        # 2. Task deletion
         if any(w in msg for w in ["delet", "remov", "apag", "limp"]) and any(w in msg for w in ["task", "taref"]):
             status_filter = None
             if "done" in msg or "concluída" in msg:
@@ -354,8 +496,10 @@ Be professional, concise, and proactive. Respond in the user's language."""
                     return {'success': True, 'response': f"Apaguei {count} tarefas com sucesso! 🧹"}
             except Exception as e:
                 self.log(f"Deletion failed: {str(e)}")
-        
-        return super().handle_chat_message(user_message, history)
+
+        # General conversation now handled by super().handleChatMessage 
+        # which now universally provides interactive lists.
+        return super().handleChatMessage(user_message, history, task_id, project_id)
 
     def create_feature(self, description, requirements):
         """Legacy method - redirects to new orchestration"""

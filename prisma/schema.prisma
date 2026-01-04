@@ -30,6 +30,21 @@ model Agent {
   receivedMessages Message[] @relation("ReceivedMessages")
 }
 
+model Project {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  status       String   @default("active") // active, completed, archived
+  repoUrl      String?
+  clientName   String?
+  startDate    DateTime @default(now())
+  endDate      DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  tasks        Task[]
+}
+
 model Task {
   id           String   @id @default(uuid())
   title        String
@@ -42,6 +57,10 @@ model Task {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
+  // Project association
+  projectId    String?
+  project      Project? @relation(fields: [projectId], references: [id])
+
   // Agent execution fields
   type         String?  // task type (e.g., "feature_implementation")
   requirements String?  // JSON string with task requirements

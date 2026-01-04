@@ -1,71 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, Circle, Clock, AlertCircle } from 'lucide-react';
 
-const RoadmapViewer = () => {
-    const [activePhase, setActivePhase] = useState('foundation');
+const RoadmapViewer = ({ tasks = [] }) => {
+    const [phases, setPhases] = useState([]);
 
-    const phases = [
-        {
-            id: 'foundation',
-            name: 'Phase 1: Foundation',
-            weeks: 'Weeks 1-2',
-            status: 'in-progress',
-            progress: 45,
-            leads: ['Architecture Agent', 'Database Architect'],
-            tasks: [
-                { name: '32-agent swarm architecture', status: 'done' },
-                { name: 'MCP integration', status: 'done' },
-                { name: 'Python-Node.js bridge', status: 'done' },
-                { name: 'Centralized state management', status: 'done' },
-                { name: 'Event-driven messaging', status: 'done' },
-                { name: 'Agent registry with monitoring', status: 'in-progress' },
-            ]
-        },
-        {
-            id: 'ux',
-            name: 'Phase 2: User Experience',
-            weeks: 'Weeks 2-3',
-            status: 'in-progress',
-            progress: 30,
-            leads: ['Design Agent', 'Frontend Engineer'],
-            tasks: [
-                { name: 'Design system', status: 'done' },
-                { name: 'Planning session component', status: 'done' },
-                { name: 'Dashboard visualization', status: 'done' },
-                { name: 'Agent Matrix implementation', status: 'in-progress' },
-                { name: 'Kanban Board', status: 'todo' },
-                { name: 'Real-time WebSocket', status: 'todo' },
-            ]
-        },
-        {
-            id: 'security',
-            name: 'Phase 3: Security & Quality',
-            weeks: 'Weeks 3-4',
-            status: 'todo',
-            progress: 10,
-            leads: ['Security Agent', 'QA Agent'],
-            tasks: [
-                { name: 'Security audit', status: 'done' },
-                { name: 'Authentication system', status: 'todo' },
-                { name: 'Test suite', status: 'todo' },
-                { name: 'CI/CD pipeline', status: 'todo' },
-            ]
-        },
-        {
-            id: 'devops',
-            name: 'Phase 4: DevOps & Deployment',
-            weeks: 'Week 4',
-            status: 'todo',
-            progress: 0,
-            leads: ['DevOps Agent', 'Monitoring Agent'],
-            tasks: [
-                { name: 'Docker Compose setup', status: 'todo' },
-                { name: 'GitHub Actions workflows', status: 'todo' },
-                { name: 'Monitoring dashboards', status: 'todo' },
-                { name: 'Alerting rules', status: 'todo' },
-            ]
-        },
-    ];
+    useEffect(() => {
+        if (!tasks || tasks.length === 0) {
+            setPhases([{
+                id: 'waiting',
+                name: 'Waiting for Project Initialization',
+                weeks: '-',
+                status: 'todo',
+                progress: 0,
+                leads: ['Project Manager'],
+                tasks: [{ name: 'Initiate project via chat', status: 'todo' }]
+            }]);
+            return;
+        }
+
+        const dynamicPhases = [];
+        const rootTasks = tasks.filter(t => !t.parentTaskId);
+
+        rootTasks.forEach((root, idx) => {
+            const subtasks = tasks.filter(t => t.parentTaskId === root.id);
+            const total = subtasks.length;
+            const completed = subtasks.filter(t => t.status === 'done' || t.status === 'completed').length;
+            const progress = total > 0 ? Math.round((completed / total) * 100) : (root.status === 'done' ? 100 : 0);
+
+            dynamicPhases.push({
+                id: root.id,
+                name: root.title || `Phase ${idx + 1}`,
+                weeks: root.dueDate ? new Date(root.dueDate).toLocaleDateString() : 'Active',
+                status: root.status === 'done' || root.status === 'completed' ? 'done' :
+                    (root.status === 'in_progress' || root.status === 'in-progress' ? 'in-progress' : 'todo'),
+                progress: progress,
+                leads: [root.assignedToId || 'Agent'],
+                tasks: subtasks.map(s => ({
+                    name: s.title,
+                    status: s.status === 'done' || s.status === 'completed' ? 'done' :
+                        (s.status === 'in_progress' || s.status === 'in-progress' ? 'in-progress' : 'todo')
+                }))
+            });
+        });
+
+        if (dynamicPhases.length > 0) {
+            setPhases(dynamicPhases);
+        }
+    }, [tasks]);
+
+    const [activePhase, setActivePhase] = useState(null);
+
+    useEffect(() => {
+        if (phases.length > 0) {
+            // If activePhase is null or not in the current phases, reset to first
+            if (!activePhase || !phases.some(p => p.id === activePhase)) {
+                setActivePhase(phases[0].id);
+            }
+        }
+    }, [phases]);
 
     const getStatusIcon = (status) => {
         switch (status) {
@@ -93,45 +85,44 @@ const RoadmapViewer = () => {
         }
     };
 
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8">
-            {/* Header */}
-            <div className="max-w-7xl mx-auto mb-8">
-                <div className="flex items-center gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-2xl">
-                        🚀
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold text-white">Agent-Company Roadmap</h1>
-                        <p className="text-slate-400">Multi-Agent Collaborative Planning</p>
-                    </div>
-                </div>
+    const stats = {
+        completed: tasks.filter(t => t.status === 'done' || t.status === 'completed').length,
+        inProgress: tasks.filter(t => t.status === 'in_progress' || t.status === 'in-progress').length,
+        todo: tasks.filter(t => t.status === 'todo' || t.status === 'pending').length,
+        activeAgents: new Set(tasks.map(t => t.assignedToId)).size
+    };
 
-                {/* Overall Progress */}
+    const totalTasks = tasks.length || 1;
+    const overallProgress = Math.round((stats.completed / totalTasks) * 100);
+
+    return (
+        <div className="bg-slate-900/50 p-8 overflow-y-auto h-full">
+            {/* Overall Progress Summary */}
+            <div className="max-w-7xl mx-auto mb-8">
                 <div className="bg-slate-800/50 backdrop-blur rounded-xl p-6 border border-slate-700">
                     <div className="flex items-center justify-between mb-3">
-                        <span className="text-slate-300 font-medium">Overall Progress</span>
-                        <span className="text-2xl font-bold text-white">35%</span>
+                        <span className="text-slate-300 font-medium">Overall Project Progress</span>
+                        <span className="text-2xl font-bold text-white">{overallProgress}%</span>
                     </div>
                     <div className="w-full bg-slate-700 rounded-full h-3">
-                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3 rounded-full transition-all duration-500" style={{ width: '35%' }} />
+                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3 rounded-full transition-all duration-500" style={{ width: `${overallProgress}%` }} />
                     </div>
                     <div className="mt-4 grid grid-cols-4 gap-4 text-center">
                         <div>
-                            <div className="text-2xl font-bold text-green-500">8</div>
-                            <div className="text-xs text-slate-400">Completed</div>
+                            <div className="text-2xl font-bold text-green-500">{stats.completed}</div>
+                            <div className="text-xs text-slate-400 font-bold uppercase">Completed</div>
                         </div>
                         <div>
-                            <div className="text-2xl font-bold text-blue-500">4</div>
-                            <div className="text-xs text-slate-400">In Progress</div>
+                            <div className="text-2xl font-bold text-blue-500">{stats.inProgress}</div>
+                            <div className="text-xs text-slate-400 font-bold uppercase">In Progress</div>
                         </div>
                         <div>
-                            <div className="text-2xl font-bold text-slate-400">14</div>
-                            <div className="text-xs text-slate-400">To Do</div>
+                            <div className="text-2xl font-bold text-slate-400">{stats.todo}</div>
+                            <div className="text-xs text-slate-400 font-bold uppercase">To Do</div>
                         </div>
                         <div>
-                            <div className="text-2xl font-bold text-purple-500">32</div>
-                            <div className="text-xs text-slate-400">Agents Active</div>
+                            <div className="text-2xl font-bold text-purple-500">{stats.activeAgents}</div>
+                            <div className="text-xs text-slate-400 font-bold uppercase">Agents Involved</div>
                         </div>
                     </div>
                 </div>

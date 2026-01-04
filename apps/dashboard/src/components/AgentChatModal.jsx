@@ -6,6 +6,8 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
     const [inputMessage, setInputMessage] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isSending, setIsSending] = useState(false);
+    const [interactiveState, setInteractiveState] = useState({}); // { msgId: { items: [] } }
+    const [confirmedMessages, setConfirmedMessages] = useState(new Set());
     const messagesEndRef = useRef(null);
 
     const colors = {
@@ -44,10 +46,14 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
 
         const handleAgentMessage = (data) => {
             if (data.agentId === agent.id) {
+                const messageData = typeof data.message === 'object' ? data.message.text : data.message;
+                const interactiveData = typeof data.message === 'object' ? data.message.interactive : null;
+
                 setMessages(prev => [...prev, {
                     id: Date.now(),
                     sender: 'agent',
-                    message: data.message,
+                    message: messageData,
+                    interactive: interactiveData,
                     timestamp: new Date(),
                     metadata: data.metadata
                 }]);
@@ -75,14 +81,35 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
             const response = await fetch(`http://localhost:3001/api/agents/${agent.id}/chat/history`);
             if (response.ok) {
                 const data = await response.json();
-                setMessages(data.messages || []);
+                const parsedMessages = (data.messages || []).map(msg => {
+                    let content = msg.content || msg.message;
+                    let interactive = null;
+
+                    if (typeof content === 'string' && content.startsWith('{')) {
+                        try {
+                            const parsed = JSON.parse(content);
+                            content = parsed.text;
+                            interactive = parsed.interactive;
+                        } catch (e) {
+                            // Not JSON or invalid, keep as is
+                        }
+                    }
+
+                    return {
+                        ...msg,
+                        message: content,
+                        interactive: interactive,
+                        sender: msg.fromId === 'user' ? 'user' : 'agent'
+                    };
+                });
+                setMessages(parsedMessages);
             }
         } catch (error) {
             console.error('Failed to load chat history:', error);
         }
     };
 
-    const sendMessage = async (message = inputMessage) => {
+    const sendMessage = async (message = inputMessage, taskId = null) => {
         if (!message.trim() || isSending) return;
 
         const userMessage = {
@@ -98,11 +125,11 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
         setIsTyping(true);
 
         try {
-            console.log('Sending message to agent:', agent.id, message.trim());
+            console.log('Sending message to agent:', agent.id, message.trim(), taskId);
             const response = await fetch(`http://localhost:3001/api/agents/${agent.id}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: message.trim() })
+                body: JSON.stringify({ message: message.trim(), taskId })
             });
 
             console.log('Response status:', response.status);
@@ -138,6 +165,112 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
             e.preventDefault();
             sendMessage();
         }
+    };
+
+    const handleInteractiveChange = (msgId, itemId, field, value) => {
+        setInteractiveState(prev => {
+            const current = prev[msgId] || { items: messages.find(m => m.id === msgId)?.interactive?.items || [] };
+            const newItems = current.items.map(item =>
+                item.id === itemId ? { ...item, [field]: value } : item
+            );
+            return { ...prev, [msgId]: { items: newItems } };
+        });
+    };
+
+    const confirmInteraction = (msgId) => {
+        let state = interactiveState[msgId];
+
+        // If no changes were made, state might be undefined.
+        // Get it from the message itself.
+        if (!state) {
+            const msg = messages.find(m => m.id === msgId);
+            if (msg && msg.interactive && msg.interactive.items) {
+                state = { items: msg.interactive.items };
+            }
+        }
+
+        if (!state) return;
+
+        const selectedItems = state.items.filter(i => i.selected);
+        const resultString = selectedItems.map(i => `- ${i.label}${i.note ? ` (${i.note})` : ''}`).join('\n');
+
+        sendMessage(`Confirmado:\n${resultString}`, msgId);
+
+        // Mark as confirmed in UI
+        setConfirmedMessages(prev => new Set([...prev, msgId]));
+    };
+
+    const renderInteractiveContent = (msg) => {
+        const state = interactiveState[msg.id] || { items: msg.interactive.items || [] };
+        const isConfirmed = confirmedMessages.has(msg.id);
+
+        if (msg.interactive.type === 'selection_list') {
+            return (
+                <div style={{
+                    marginTop: '16px',
+                    borderTop: `1px solid ${colors.border}`,
+                    paddingTop: '16px',
+                    opacity: isConfirmed ? 0.7 : 1,
+                    pointerEvents: isConfirmed ? 'none' : 'auto'
+                }}>
+                    <p style={{ fontWeight: 600, marginBottom: '12px', color: colors.primary }}>
+                        {msg.interactive.title} {isConfirmed && <span style={{ color: '#10b981', marginLeft: '8px' }}>✓ Confirmado</span>}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {state.items.map(item => (
+                            <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={item.selected}
+                                        onChange={(e) => handleInteractiveChange(msg.id, item.id, 'selected', e.target.checked)}
+                                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ fontWeight: 500 }}>{item.label}</span>
+                                </div>
+                                {item.selected && (
+                                    <input
+                                        type="text"
+                                        placeholder="Acrescentar mais detalhes..."
+                                        value={item.note || ''}
+                                        onChange={(e) => handleInteractiveChange(msg.id, item.id, 'note', e.target.value)}
+                                        style={{
+                                            marginLeft: '28px',
+                                            padding: '6px 10px',
+                                            backgroundColor: 'rgba(0,0,0,0.2)',
+                                            border: `1px solid ${colors.border}`,
+                                            borderRadius: '6px',
+                                            color: colors.textMain,
+                                            fontSize: '12px',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    {!isConfirmed && (
+                        <button
+                            onClick={() => confirmInteraction(msg.id)}
+                            style={{
+                                marginTop: '16px',
+                                width: '100%',
+                                padding: '10px',
+                                backgroundColor: colors.primary,
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: '#fff',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Confirmar Seleção
+                        </button>
+                    )}
+                </div>
+            );
+        }
+        return null;
     };
 
     const quickActions = [
@@ -359,12 +492,14 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
                                 key={msg.id}
                                 style={{
                                     display: 'flex',
-                                    justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start'
+                                    flexDirection: 'column',
+                                    alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                                    gap: '4px'
                                 }}
                             >
                                 <div
                                     style={{
-                                        maxWidth: '70%',
+                                        maxWidth: '85%',
                                         padding: '12px 16px',
                                         borderRadius: '16px',
                                         backgroundColor: msg.sender === 'user' ? colors.userBubble :
@@ -372,16 +507,22 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
                                                 colors.agentBubble,
                                         color: colors.textMain,
                                         fontSize: '14px',
-                                        lineHeight: '1.5'
+                                        lineHeight: '1.5',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                                     }}
                                 >
                                     <div>{msg.message}</div>
+
+                                    {/* Render Interactive Content if present */}
+                                    {msg.interactive && renderInteractiveContent(msg)}
+
                                     <div
                                         style={{
                                             fontSize: '12px',
                                             color: colors.textSecondary,
-                                            marginTop: '4px',
-                                            opacity: 0.7
+                                            marginTop: '8px',
+                                            opacity: 0.7,
+                                            textAlign: msg.sender === 'user' ? 'right' : 'left'
                                         }}
                                     >
                                         {formatTime(msg.timestamp)}
