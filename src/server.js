@@ -1083,6 +1083,524 @@ app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
 });
 
 // ============================================
+// Recommendations API
+// ============================================
+
+/**
+ * GET /api/projects/:id/recommendations
+ * Get all recommendations for a project
+ */
+app.get('/api/projects/:id/recommendations', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.query;
+        
+        const where = { projectId: id };
+        if (status) where.status = status;
+        
+        const recommendations = await prisma.recommendation.findMany({
+            where,
+            orderBy: [
+                { priority: 'desc' },
+                { createdAt: 'desc' }
+            ]
+        });
+        
+        res.json({ success: true, recommendations });
+    } catch (error) {
+        logger.error('Error fetching recommendations:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects/:id/recommendations
+ * Create a new recommendation
+ */
+app.post('/api/projects/:id/recommendations', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, priority, category, createdBy } = req.body;
+        
+        if (!title) {
+            return res.status(400).json({ success: false, error: 'Title is required' });
+        }
+        
+        const recommendation = await prisma.recommendation.create({
+            data: {
+                projectId: id,
+                title,
+                description,
+                priority: priority || 'medium',
+                category,
+                createdBy: createdBy || 'pm'
+            }
+        });
+        
+        logger.info(`Recommendation created: ${recommendation.id}`);
+        io.emit('recommendation:created', recommendation);
+        
+        res.json({ success: true, recommendation });
+    } catch (error) {
+        logger.error('Error creating recommendation:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/recommendations/:id
+ * Update a recommendation (e.g., mark as implemented)
+ */
+app.patch('/api/recommendations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, taskId } = req.body;
+        
+        const updateData = {};
+        if (status) updateData.status = status;
+        if (taskId) updateData.taskId = taskId;
+        if (status === 'implemented') updateData.implementedAt = new Date();
+        
+        const recommendation = await prisma.recommendation.update({
+            where: { id },
+            data: updateData
+        });
+        
+        logger.info(`Recommendation updated: ${id}`);
+        io.emit('recommendation:updated', recommendation);
+        
+        res.json({ success: true, recommendation });
+    } catch (error) {
+        logger.error('Error updating recommendation:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/recommendations/:id/implement
+ * Implement a recommendation by creating a task
+ */
+app.post('/api/recommendations/:id/implement', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { agentIds } = req.body;
+        
+        const recommendation = await prisma.recommendation.findUnique({
+            where: { id },
+            include: { project: true }
+        });
+        
+        if (!recommendation) {
+            return res.status(404).json({ success: false, error: 'Recommendation not found' });
+        }
+        
+        if (recommendation.status === 'implemented') {
+            return res.status(400).json({ success: false, error: 'Recommendation already implemented' });
+        }
+        
+        // Create a task for the recommendation
+        const task = await prisma.task.create({
+            data: {
+                title: `Implement: ${recommendation.title}`,
+                description: recommendation.description,
+                priority: recommendation.priority,
+                status: 'todo',
+                type: 'recommendation_implementation',
+                projectId: recommendation.projectId,
+                requirements: JSON.stringify({
+                    recommendationId: id,
+                    category: recommendation.category
+                })
+            }
+        });
+        
+        // Assign agents if provided
+        if (agentIds && agentIds.length > 0) {
+            await Promise.all(
+                agentIds.map(agentId =>
+                    prisma.taskAgent.create({
+                        data: {
+                            taskId: task.id,
+                            agentId
+                        }
+                    })
+                )
+            );
+        }
+        
+        // Update recommendation status
+        await prisma.recommendation.update({
+            where: { id },
+            data: {
+                status: 'implemented',
+                taskId: task.id,
+                implementedAt: new Date()
+            }
+        });
+        
+        // Fetch complete task
+        const completeTask = await prisma.task.findUnique({
+            where: { id: task.id },
+            include: {
+                agents: { include: { agent: true } },
+                subtasks: true,
+                comments: true
+            }
+        });
+        
+        logger.info(`Recommendation ${id} implemented as task ${task.id}`);
+        io.emit('recommendation:implemented', { recommendationId: id, taskId: task.id });
+        io.emit('task:created', completeTask);
+        
+        res.json({ success: true, task: completeTask, recommendationId: id });
+    } catch (error) {
+        logger.error('Error implementing recommendation:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// Meetings API
+// ============================================
+
+/**
+ * GET /api/meetings
+ * Get all meetings, optionally filtered by project
+ */
+app.get('/api/meetings', async (req, res) => {
+    try {
+        const { projectId, status } = req.query;
+        
+        const where = {};
+        if (projectId) where.projectId = projectId;
+        if (status) where.status = status;
+        
+        const meetings = await prisma.meeting.findMany({
+            where,
+            include: {
+                participants: true,
+                project: true
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        
+        res.json({ success: true, meetings });
+    } catch (error) {
+        logger.error('Error fetching meetings:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/meetings/:id
+ * Get a specific meeting with full transcript
+ */
+app.get('/api/meetings/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const meeting = await prisma.meeting.findUnique({
+            where: { id },
+            include: {
+                participants: true,
+                project: true
+            }
+        });
+        
+        if (!meeting) {
+            return res.status(404).json({ success: false, error: 'Meeting not found' });
+        }
+        
+        res.json({ success: true, meeting });
+    } catch (error) {
+        logger.error('Error fetching meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/meetings
+ * Create a new meeting
+ */
+app.post('/api/meetings', async (req, res) => {
+    try {
+        const { title, description, projectId, agentIds, createdBy } = req.body;
+        
+        if (!title) {
+            return res.status(400).json({ success: false, error: 'Title is required' });
+        }
+        
+        if (!agentIds || agentIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'At least one agent must be invited' });
+        }
+        
+        const meeting = await prisma.meeting.create({
+            data: {
+                title,
+                description,
+                projectId,
+                createdBy: createdBy || 'user'
+            }
+        });
+        
+        // Add participants
+        await Promise.all(
+            agentIds.map(agentId =>
+                prisma.meetingParticipant.create({
+                    data: {
+                        meetingId: meeting.id,
+                        agentId
+                    }
+                })
+            )
+        );
+        
+        // Fetch complete meeting
+        const completeMeeting = await prisma.meeting.findUnique({
+            where: { id: meeting.id },
+            include: {
+                participants: true,
+                project: true
+            }
+        });
+        
+        logger.info(`Meeting created: ${meeting.id} with ${agentIds.length} participants`);
+        io.emit('meeting:created', completeMeeting);
+        
+        res.json({ success: true, meeting: completeMeeting });
+    } catch (error) {
+        logger.error('Error creating meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/meetings/:id/messages
+ * Add a message to a meeting
+ */
+app.post('/api/meetings/:id/messages', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { fromId, content } = req.body;
+        
+        if (!content) {
+            return res.status(400).json({ success: false, error: 'Message content is required' });
+        }
+        
+        const meeting = await prisma.meeting.findUnique({
+            where: { id },
+            include: { participants: true, project: true }
+        });
+        
+        if (!meeting) {
+            return res.status(404).json({ success: false, error: 'Meeting not found' });
+        }
+        
+        // Parse existing transcript
+        let transcript = [];
+        try {
+            transcript = JSON.parse(meeting.transcript);
+        } catch (e) {
+            transcript = [];
+        }
+        
+        // Add new message
+        const message = {
+            id: Date.now().toString(),
+            fromId: fromId || 'user',
+            content,
+            timestamp: new Date().toISOString()
+        };
+        
+        transcript.push(message);
+        
+        // Update meeting
+        await prisma.meeting.update({
+            where: { id },
+            data: {
+                transcript: JSON.stringify(transcript)
+            }
+        });
+        
+        logger.info(`Message added to meeting ${id}`);
+        io.emit('meeting:message', { meetingId: id, message });
+        
+        // If message is from user, get responses from agents
+        if (fromId === 'user' || !fromId) {
+            const agentIds = meeting.participants.map(p => p.agentId);
+            
+            // Send message to agents in parallel (simplified - in reality would need context)
+            const responses = await Promise.all(
+                agentIds.map(async (agentId) => {
+                    const agent = AgentRegistry.getAgent(agentId);
+                    if (!agent) return null;
+                    
+                    try {
+                        // Include project context if available
+                        const context = meeting.projectId ? {
+                            projectId: meeting.projectId,
+                            projectName: meeting.project?.name
+                        } : {};
+                        
+                        const agentResponse = await agent.handleChatMessage(content, transcript, null, meeting.projectId);
+                        
+                        const responseMessage = {
+                            id: Date.now().toString() + '-' + agentId,
+                            fromId: agentId,
+                            content: agentResponse.response || agentResponse.result || 'No response',
+                            timestamp: new Date().toISOString()
+                        };
+                        
+                        transcript.push(responseMessage);
+                        return responseMessage;
+                    } catch (err) {
+                        logger.error(`Error getting response from agent ${agentId}:`, err);
+                        return null;
+                    }
+                })
+            );
+            
+            // Update meeting with agent responses
+            await prisma.meeting.update({
+                where: { id },
+                data: {
+                    transcript: JSON.stringify(transcript)
+                }
+            });
+            
+            // Emit agent responses
+            responses.filter(Boolean).forEach(response => {
+                io.emit('meeting:message', { meetingId: id, message: response });
+            });
+        }
+        
+        res.json({ success: true, message });
+    } catch (error) {
+        logger.error('Error adding message to meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/meetings/:id
+ * Update meeting (e.g., mark as completed)
+ */
+app.patch('/api/meetings/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        const updateData = {};
+        if (status) {
+            updateData.status = status;
+            if (status === 'completed') {
+                updateData.completedAt = new Date();
+            }
+        }
+        
+        const meeting = await prisma.meeting.update({
+            where: { id },
+            data: updateData,
+            include: {
+                participants: true,
+                project: true
+            }
+        });
+        
+        logger.info(`Meeting updated: ${id}`);
+        io.emit('meeting:updated', meeting);
+        
+        res.json({ success: true, meeting });
+    } catch (error) {
+        logger.error('Error updating meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/meetings/:id/export
+ * Export meeting transcript
+ */
+app.get('/api/meetings/:id/export', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { format } = req.query; // 'json' or 'text'
+        
+        const meeting = await prisma.meeting.findUnique({
+            where: { id },
+            include: {
+                participants: true,
+                project: true
+            }
+        });
+        
+        if (!meeting) {
+            return res.status(404).json({ success: false, error: 'Meeting not found' });
+        }
+        
+        let transcript = [];
+        try {
+            transcript = JSON.parse(meeting.transcript);
+        } catch (e) {
+            transcript = [];
+        }
+        
+        if (format === 'text') {
+            // Format as plain text
+            let text = `Meeting: ${meeting.title}\n`;
+            text += `Date: ${meeting.createdAt.toISOString()}\n`;
+            if (meeting.project) {
+                text += `Project: ${meeting.project.name}\n`;
+            }
+            text += `\n${'='.repeat(60)}\n\n`;
+            
+            transcript.forEach(msg => {
+                const agent = AgentRegistry.getAgent(msg.fromId);
+                const name = msg.fromId === 'user' ? 'User' : agent?.name || msg.fromId;
+                text += `[${new Date(msg.timestamp).toLocaleTimeString()}] ${name}:\n`;
+                text += `${msg.content}\n\n`;
+            });
+            
+            res.setHeader('Content-Type', 'text/plain');
+            res.setHeader('Content-Disposition', `attachment; filename="meeting-${id}.txt"`);
+            res.send(text);
+        } else {
+            // Format as JSON
+            const exportData = {
+                meeting: {
+                    id: meeting.id,
+                    title: meeting.title,
+                    description: meeting.description,
+                    createdAt: meeting.createdAt,
+                    completedAt: meeting.completedAt,
+                    status: meeting.status,
+                    project: meeting.project ? {
+                        id: meeting.project.id,
+                        name: meeting.project.name
+                    } : null
+                },
+                participants: meeting.participants.map(p => {
+                    const agent = AgentRegistry.getAgent(p.agentId);
+                    return {
+                        agentId: p.agentId,
+                        name: agent?.name || p.agentId,
+                        joinedAt: p.joinedAt
+                    };
+                }),
+                transcript
+            };
+            
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="meeting-${id}.json"`);
+            res.json(exportData);
+        }
+    } catch (error) {
+        logger.error('Error exporting meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
 // REST API Routes
 // ============================================
 
