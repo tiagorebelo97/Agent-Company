@@ -49,7 +49,9 @@ model Project {
   reports         String?  @default("[]") // JSON array of report objects
   localPath       String?                // Local path to the repository
   
-  tasks        Task[]
+  tasks            Task[]
+  recommendations  Recommendation[]
+  meetings         Meeting[]
 }
 
 model Task {
@@ -122,4 +124,45 @@ model Message {
   content     String
   timestamp   DateTime @default(now())
   type        String   @default("chat") // chat, system, task_update
+}
+
+model Recommendation {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  description   String
+  priority      String   @default("medium") // low, medium, high
+  category      String?  // e.g., "performance", "security", "architecture"
+  status        String   @default("pending") // pending, implemented, dismissed
+  implementedAt DateTime?
+  taskId        String?  // linked task if implemented
+  createdBy     String   @default("pm") // agent that created the recommendation
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Meeting {
+  id              String          @id @default(uuid())
+  projectId       String?
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  status          String          @default("active") // active, completed, cancelled
+  createdBy       String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
+  transcript      String          @default("[]") // JSON array of messages
+  participants    MeetingParticipant[]
+}
+
+model MeetingParticipant {
+  id          String   @id @default(uuid())
+  meetingId   String
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  agentId     String
+  joinedAt    DateTime @default(now())
+  
+  @@unique([meetingId, agentId])
 }

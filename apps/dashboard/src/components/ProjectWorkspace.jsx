@@ -17,18 +17,28 @@ import {
     BarChart3,
     FileCode,
     Settings,
-    Plus
+    Plus,
+    Lightbulb,
+    Users,
+    UserCog
 } from 'lucide-react';
 import ActivityFeed from './ActivityFeed';
 import ProjectCreateModal from './ProjectCreateModal';
 import ProjectFileExplorer from './ProjectFileExplorer';
 import ProjectAnalysisDashboard from './ProjectAnalysisDashboard';
+import GitOperations from './GitOperations';
+import RecommendationsList from './RecommendationsList';
+import MeetingRoom from './MeetingRoom';
+import CreateMeetingModal from './CreateMeetingModal';
+import AgentAssignment from './AgentAssignment';
 
 const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack, refreshTasks, refreshProjects }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [view, setView] = useState('overview'); // overview, explorer, analysis, tasks, activity
+    const [view, setView] = useState('overview'); // overview, explorer, analysis, tasks, activity, git, recommendations, meetings, agents
     const [selectedProjectId, setSelectedProjectId] = useState('all');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isCreateMeetingModalOpen, setIsCreateMeetingModalOpen] = useState(false);
+    const [activeMeetingId, setActiveMeetingId] = useState(null);
 
     const colors = {
         bg: '#000000',
@@ -79,8 +89,12 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
     const navigationItems = [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
         { id: 'explorer', label: 'File Explorer', icon: FolderTree },
+        { id: 'git', label: 'Git Operations', icon: GitBranch },
         { id: 'analysis', label: 'AI Analysis', icon: Cpu },
+        { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
+        { id: 'agents', label: 'Team Assignment', icon: UserCog },
         { id: 'tasks', label: 'Kanban Board', icon: ListChecks },
+        { id: 'meetings', label: 'Meeting Rooms', icon: Users },
         { id: 'activity', label: 'Activity Feed', icon: Activity },
     ];
 
@@ -292,6 +306,100 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                         </div>
                     )}
 
+                    {view === 'git' && (
+                        <div style={{ padding: '32px', height: '100%', overflowY: 'auto' }}>
+                            {activeProject ? (
+                                <GitOperations projectId={activeProject.id} />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <GitBranch size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Git operations require a project to be selected</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {view === 'recommendations' && (
+                        <div style={{ padding: '32px', height: '100%', overflowY: 'auto' }}>
+                            {activeProject ? (
+                                <RecommendationsList projectId={activeProject.id} agents={agents} />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <Lightbulb size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Recommendations are project-specific</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {view === 'agents' && (
+                        <div style={{ padding: '32px', height: '100%', overflowY: 'auto' }}>
+                            {activeProject ? (
+                                <AgentAssignment 
+                                    projectId={activeProject.id} 
+                                    agents={agents}
+                                    onUpdate={() => {
+                                        refreshProjects?.();
+                                    }}
+                                />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <UserCog size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Agent assignments are project-specific</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {view === 'meetings' && (
+                        <div style={{ padding: '32px', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 900 }}>Meeting Rooms</h2>
+                                    <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: colors.textMuted }}>
+                                        Collaborate with agents in real-time
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsCreateMeetingModalOpen(true)}
+                                    style={{
+                                        padding: '12px 20px',
+                                        backgroundColor: colors.primary,
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <Plus size={16} />
+                                    New Meeting
+                                </button>
+                            </div>
+                            {activeMeetingId ? (
+                                <MeetingRoom 
+                                    meetingId={activeMeetingId} 
+                                    projectId={selectedProjectId === 'all' ? null : selectedProjectId}
+                                    agents={agents}
+                                    onClose={() => setActiveMeetingId(null)}
+                                />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <Users size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>No active meeting</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Create a new meeting to collaborate with agents</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {view === 'activity' && (
                         <div style={{ height: '100%' }}>
                             <ActivityFeed socket={socket} events={events} />
@@ -364,6 +472,18 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                     setView('overview');
                 }}
             />
+
+            {isCreateMeetingModalOpen && (
+                <CreateMeetingModal
+                    projectId={selectedProjectId === 'all' || selectedProjectId === 'unassigned' ? null : selectedProjectId}
+                    agents={agents}
+                    onClose={() => setIsCreateMeetingModalOpen(false)}
+                    onCreated={(meeting) => {
+                        setActiveMeetingId(meeting.id);
+                        setIsCreateMeetingModalOpen(false);
+                    }}
+                />
+            )}
         </div>
     );
 };
