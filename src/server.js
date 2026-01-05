@@ -720,6 +720,138 @@ app.post('/api/projects/:id/analyze', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// ============================================
+// Git Operations API
+// ============================================
+
+/**
+ * GET /api/projects/:id/git/status
+ * Get git status for project repository
+ */
+app.get('/api/projects/:id/git/status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(absolutePath);
+        
+        const status = await git.status();
+        res.json({ success: true, status });
+    } catch (error) {
+        logger.error('Error getting git status:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects/:id/git/pull
+ * Pull changes from remote repository
+ */
+app.post('/api/projects/:id/git/pull', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(absolutePath);
+        
+        const result = await git.pull();
+        
+        logger.info(`Git pull completed for project ${id}`);
+        io.emit('git:operation', { projectId: id, operation: 'pull', success: true });
+        
+        res.json({ success: true, result });
+    } catch (error) {
+        logger.error('Error pulling git changes:', error);
+        io.emit('git:operation', { projectId: req.params.id, operation: 'pull', success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects/:id/git/push
+ * Push changes to remote repository
+ */
+app.post('/api/projects/:id/git/push', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(absolutePath);
+        
+        const result = await git.push();
+        
+        logger.info(`Git push completed for project ${id}`);
+        io.emit('git:operation', { projectId: id, operation: 'push', success: true });
+        
+        res.json({ success: true, result });
+    } catch (error) {
+        logger.error('Error pushing git changes:', error);
+        io.emit('git:operation', { projectId: req.params.id, operation: 'push', success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects/:id/git/commit
+ * Commit changes
+ */
+app.post('/api/projects/:id/git/commit', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message, files } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        if (!message) {
+            return res.status(400).json({ success: false, error: 'Commit message is required' });
+        }
+
+        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(absolutePath);
+        
+        // Add files if specified, otherwise add all
+        if (files && files.length > 0) {
+            await git.add(files);
+        } else {
+            await git.add('.');
+        }
+        
+        const result = await git.commit(message);
+        
+        logger.info(`Git commit completed for project ${id}`);
+        io.emit('git:operation', { projectId: id, operation: 'commit', success: true });
+        
+        res.json({ success: true, result });
+    } catch (error) {
+        logger.error('Error committing git changes:', error);
+        io.emit('git:operation', { projectId: req.params.id, operation: 'commit', success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 /**
  * GET /api/projects/:id/files/:path
  * Read file content
