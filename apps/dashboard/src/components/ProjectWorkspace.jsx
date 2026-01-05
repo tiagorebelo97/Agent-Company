@@ -19,7 +19,8 @@ import {
     Settings,
     Plus,
     Lightbulb,
-    Users
+    Users,
+    UserCog
 } from 'lucide-react';
 import ActivityFeed from './ActivityFeed';
 import ProjectCreateModal from './ProjectCreateModal';
@@ -29,10 +30,11 @@ import GitOperations from './GitOperations';
 import RecommendationsList from './RecommendationsList';
 import MeetingRoom from './MeetingRoom';
 import CreateMeetingModal from './CreateMeetingModal';
+import AgentAssignment from './AgentAssignment';
 
 const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack, refreshTasks, refreshProjects }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [view, setView] = useState('overview'); // overview, explorer, analysis, tasks, activity, git, recommendations, meetings
+    const [view, setView] = useState('overview'); // overview, explorer, analysis, tasks, activity, git, recommendations, meetings, agents
     const [selectedProjectId, setSelectedProjectId] = useState('all');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isCreateMeetingModalOpen, setIsCreateMeetingModalOpen] = useState(false);
@@ -90,6 +92,7 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
         { id: 'git', label: 'Git Operations', icon: GitBranch },
         { id: 'analysis', label: 'AI Analysis', icon: Cpu },
         { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
+        { id: 'agents', label: 'Team Assignment', icon: UserCog },
         { id: 'tasks', label: 'Kanban Board', icon: ListChecks },
         { id: 'meetings', label: 'Meeting Rooms', icon: Users },
         { id: 'activity', label: 'Activity Feed', icon: Activity },
@@ -326,6 +329,26 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                                     <Lightbulb size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
                                     <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
                                     <p style={{ margin: 0, fontSize: '14px' }}>Recommendations are project-specific</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {view === 'agents' && (
+                        <div style={{ padding: '32px', height: '100%', overflowY: 'auto' }}>
+                            {activeProject ? (
+                                <AgentAssignment 
+                                    projectId={activeProject.id} 
+                                    agents={agents}
+                                    onUpdate={() => {
+                                        refreshProjects?.();
+                                    }}
+                                />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <UserCog size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Agent assignments are project-specific</p>
                                 </div>
                             )}
                         </div>

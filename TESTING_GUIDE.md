@@ -185,22 +185,63 @@ This document provides step-by-step testing procedures for the 5 phases of featu
 
 ## Phase 4: Agent Assignment Testing
 
-### Test 4.1: Assign Agents to Project
+### Test 4.1: View Agent Assignment UI
 **Steps:**
 1. Select a project
-2. (UI to be implemented - manual API test for now)
-3. Use API to assign agents:
-   ```bash
-   curl -X PATCH http://localhost:3001/api/projects/{projectId} \
-     -H "Content-Type: application/json" \
-     -d '{"assignedAgents": "[\"pm\", \"frontend\", \"backend\"]"}'
-   ```
+2. Navigate to "Team Assignment" view in the sidebar
+3. Observe the interface
 
 **Expected Result:**
-- Project's assignedAgents field is updated
-- Agents are associated with the project
+- Three sections displayed: AI Suggested Agents, Assigned Team, Available Agents
+- Statistics showing assigned/available/suggested counts
+- Agents displayed with emoji, name, and role
 
-### Test 4.2: Agents Receive Project Context
+### Test 4.2: Assign Agents from Available Pool
+**Steps:**
+1. In the Team Assignment view
+2. Click on an agent in the "Available Agents" section
+3. Observe the change
+
+**Expected Result:**
+- Agent moves from "Available Agents" to "Assigned Team"
+- Success message appears
+- Statistics update immediately
+- Changes are saved automatically
+
+### Test 4.3: Unassign Agents
+**Steps:**
+1. In the "Assigned Team" section
+2. Click the trash icon on an assigned agent
+3. Observe the change
+
+**Expected Result:**
+- Agent moves from "Assigned Team" back to "Available Agents"
+- Success message appears
+- Statistics update
+- Changes persist after page refresh
+
+### Test 4.4: Assign All Suggested Agents
+**Steps:**
+1. If AI-suggested agents are shown (from project analysis)
+2. Click "Assign All" button in the suggested section
+3. Observe the change
+
+**Expected Result:**
+- All suggested agents move to "Assigned Team"
+- Suggested section disappears or updates
+- Single success message for batch operation
+
+### Test 4.5: Assign Individual Suggested Agent
+**Steps:**
+1. Click on an individual suggested agent
+2. Observe the change
+
+**Expected Result:**
+- Agent moves to "Assigned Team"
+- Agent is removed from suggested list
+- Success message appears
+
+### Test 4.6: Agents Receive Project Context
 **Steps:**
 1. Assign agents to a project
 2. Create a task in that project
@@ -211,15 +252,26 @@ This document provides step-by-step testing procedures for the 5 phases of featu
 - Project local path is available
 - Project description/requirements are accessible
 
-### Test 4.3: Agent Responses Use Project Knowledge
+### Test 4.7: Agent Responses Use Project Knowledge
 **Steps:**
 1. Create a task with project-specific questions
-2. Assign to an agent
+2. Assign to an agent that's part of the project team
 3. Check agent's response
 
 **Expected Result:**
 - Agent response references project-specific information
 - Agent uses context from project files if applicable
+
+### Test 4.8: Persistence After Refresh
+**Steps:**
+1. Assign several agents to a project
+2. Navigate away to another view
+3. Come back to Team Assignment
+4. Refresh the page
+
+**Expected Result:**
+- All assigned agents are still shown in "Assigned Team"
+- Agent assignments persist across navigation and page refreshes
 
 ---
 
