@@ -1349,6 +1349,7 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
         // If message is from user, get responses from agents
         if (fromId === 'user' || !fromId) {
             const agentIds = meeting.participants.map(p => p.agentId);
+            const linkedTasks = [];
 
             // Send message to agents in parallel (simplified - in reality would need context)
             const responses = await Promise.all(
@@ -1365,10 +1366,48 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
 
                         const agentResponse = await agent.handleChatMessage(content, transcript, null, meeting.projectId);
 
+                        let responseContent = agentResponse.response || agentResponse.result || 'No response';
+                        
+                        // Detect task commitment in agent response
+                        const taskCommitmentPattern = /(?:I will|I'll|I'm going to|I plan to|Let me)\s+(.*?)(?:\.|$)/gi;
+                        const matches = [...responseContent.matchAll(taskCommitmentPattern)];
+                        
+                        if (matches.length > 0 && meeting.projectId) {
+                            // Create tasks for agent commitments
+                            for (const match of matches) {
+                                const taskDescription = match[1].trim();
+                                if (taskDescription.length > 10) { // Only create meaningful tasks
+                                    try {
+                                        const task = await prisma.task.create({
+                                            data: {
+                                                title: taskDescription.substring(0, 100),
+                                                description: `Task created from meeting: ${meeting.title}\n\nAgent commitment: ${match[0]}`,
+                                                status: 'todo',
+                                                priority: 'medium',
+                                                projectId: meeting.projectId,
+                                                type: 'meeting_commitment',
+                                                createdBy: agentId,
+                                                agents: {
+                                                    create: [{ agentId }]
+                                                }
+                                            }
+                                        });
+                                        linkedTasks.push(task.id);
+                                        logger.info(`Task created from meeting commitment: ${task.id}`);
+                                        
+                                        // Add task reference to response
+                                        responseContent += `\n\n📋 *Task created: ${task.title}* (ID: ${task.id.substring(0, 8)})`;
+                                    } catch (taskErr) {
+                                        logger.error('Error creating task from meeting commitment:', taskErr);
+                                    }
+                                }
+                            }
+                        }
+
                         const responseMessage = {
                             id: Date.now().toString() + '-' + agentId,
                             fromId: agentId,
-                            content: agentResponse.response || agentResponse.result || 'No response',
+                            content: responseContent,
                             timestamp: new Date().toISOString()
                         };
 
@@ -1381,13 +1420,32 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                 })
             );
 
-            // Update meeting with agent responses
-            await prisma.meeting.update({
-                where: { id },
-                data: {
-                    transcript: JSON.stringify(transcript)
+            // Update linked tasks in meeting if any were created
+            if (linkedTasks.length > 0) {
+                let existingLinkedTasks = [];
+                try {
+                    existingLinkedTasks = JSON.parse(meeting.linkedTasks || '[]');
+                } catch (e) {
+                    existingLinkedTasks = [];
                 }
-            });
+                const allLinkedTasks = [...existingLinkedTasks, ...linkedTasks];
+                
+                await prisma.meeting.update({
+                    where: { id },
+                    data: {
+                        transcript: JSON.stringify(transcript),
+                        linkedTasks: JSON.stringify(allLinkedTasks)
+                    }
+                });
+            } else {
+                // Update meeting with agent responses
+                await prisma.meeting.update({
+                    where: { id },
+                    data: {
+                        transcript: JSON.stringify(transcript)
+                    }
+                });
+            }
 
             // Emit agent responses
             responses.filter(Boolean).forEach(response => {
@@ -1517,6 +1575,133 @@ app.get('/api/meetings/:id/export', async (req, res) => {
         }
     } catch (error) {
         logger.error('Error exporting meeting:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// Agent Knowledge Management API Routes
+// ============================================
+
+/**
+ * GET /api/agents/:agentId/knowledge
+ * Get all knowledge items for an agent
+ */
+app.get('/api/agents/:agentId/knowledge', async (req, res) => {
+    try {
+        const { agentId } = req.params;
+        const { type } = req.query;
+
+        const where = { agentId };
+        if (type) where.type = type;
+
+        const knowledge = await prisma.agentKnowledge.findMany({
+            where,
+            orderBy: { createdAt: 'desc' }
+        });
+
+        res.json({ success: true, knowledge });
+    } catch (error) {
+        logger.error('Error fetching agent knowledge:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/agents/:agentId/knowledge
+ * Add knowledge to an agent
+ */
+app.post('/api/agents/:agentId/knowledge', async (req, res) => {
+    try {
+        const { agentId } = req.params;
+        const { title, description, type, content, metadata, skillTags } = req.body;
+
+        if (!title || !type || !content) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Title, type, and content are required' 
+            });
+        }
+
+        const knowledge = await prisma.agentKnowledge.create({
+            data: {
+                agentId,
+                title,
+                description,
+                type, // document, image, video, url, text
+                content,
+                metadata: metadata ? JSON.stringify(metadata) : '{}',
+                skillTags: skillTags ? JSON.stringify(skillTags) : '[]'
+            }
+        });
+
+        // Update agent skills if skillTags provided
+        if (skillTags && skillTags.length > 0) {
+            const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+            if (agent) {
+                let existingSkills = [];
+                try {
+                    existingSkills = JSON.parse(agent.skills || '[]');
+                } catch (e) {
+                    existingSkills = [];
+                }
+                const updatedSkills = [...new Set([...existingSkills, ...skillTags])];
+                await prisma.agent.update({
+                    where: { id: agentId },
+                    data: { skills: JSON.stringify(updatedSkills) }
+                });
+            }
+        }
+
+        logger.info(`Knowledge added to agent ${agentId}: ${title}`);
+        res.json({ success: true, knowledge });
+    } catch (error) {
+        logger.error('Error adding agent knowledge:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/agents/:agentId/knowledge/:knowledgeId
+ * Update knowledge item (e.g., increment usage count)
+ */
+app.patch('/api/agents/:agentId/knowledge/:knowledgeId', async (req, res) => {
+    try {
+        const { knowledgeId } = req.params;
+        const { usageCount, lastUsed } = req.body;
+
+        const updateData = {};
+        if (usageCount !== undefined) updateData.usageCount = usageCount;
+        if (lastUsed) updateData.lastUsed = new Date(lastUsed);
+
+        const knowledge = await prisma.agentKnowledge.update({
+            where: { id: knowledgeId },
+            data: updateData
+        });
+
+        res.json({ success: true, knowledge });
+    } catch (error) {
+        logger.error('Error updating agent knowledge:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * DELETE /api/agents/:agentId/knowledge/:knowledgeId
+ * Delete a knowledge item
+ */
+app.delete('/api/agents/:agentId/knowledge/:knowledgeId', async (req, res) => {
+    try {
+        const { knowledgeId } = req.params;
+
+        await prisma.agentKnowledge.delete({
+            where: { id: knowledgeId }
+        });
+
+        logger.info(`Knowledge item deleted: ${knowledgeId}`);
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error deleting agent knowledge:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -3350,26 +3535,48 @@ async function initializeAgents() {
     const agentsConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     logger.info(`Found ${agentsConfig.length} agents in config.`);
 
+    // Import specialized agent classes
+    const { ProjectManagerAgent } = await import('./agents/implementations/ProjectManagerAgent.js');
+    const { FrontendAgent } = await import('./agents/implementations/FrontendAgent.js');
+    const { BackendAgent } = await import('./agents/implementations/BackendAgent.js');
+    const { DesignAgent } = await import('./agents/implementations/DesignAgent.js');
+
+    const specializedAgents = {
+        'pm': ProjectManagerAgent,
+        'frontend': FrontendAgent,
+        'backend': BackendAgent,
+        'designer': DesignAgent
+    };
+
     // Create agents dynamically
     for (const config of agentsConfig) {
         try {
             logger.info(`Registering ${config.name}...`);
 
-            // Determine Python path
-            // 1. Explicit path in config
-            // 2. Standard path based on PascalCase name
-            let pythonPath;
-            if (config.customPath) {
-                pythonPath = path.join(process.cwd(), config.customPath);
+            let agent;
+            
+            // Check if there's a specialized implementation
+            if (specializedAgents[config.id]) {
+                logger.info(`Using specialized implementation for ${config.id}`);
+                const AgentClass = specializedAgents[config.id];
+                agent = new AgentClass();
             } else {
-                const folderName = toPascalCase(config.name);
-                pythonPath = path.join(process.cwd(), 'src', 'agents', 'implementations', folderName, 'main.py');
-            }
+                // Determine Python path
+                // 1. Explicit path in config
+                // 2. Standard path based on PascalCase name
+                let pythonPath;
+                if (config.customPath) {
+                    pythonPath = path.join(process.cwd(), config.customPath);
+                } else {
+                    const folderName = toPascalCase(config.name);
+                    pythonPath = path.join(process.cwd(), 'src', 'agents', 'implementations', folderName, 'main.py');
+                }
 
-            const agent = new BaseAgent(config.id, config.name, {
-                ...config,
-                pythonPath
-            });
+                agent = new BaseAgent(config.id, config.name, {
+                    ...config,
+                    pythonPath
+                });
+            }
 
             await agent.connectMCPs(MCPManager);
             AgentRegistry.register(agent);

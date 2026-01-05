@@ -3,6 +3,7 @@ import { Lightbulb, CheckCircle, XCircle, Play, AlertTriangle, Filter } from 'lu
 
 const RecommendationsList = ({ projectId, agents = [] }) => {
     const [recommendations, setRecommendations] = useState([]);
+    const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState('all'); // all, pending, implemented, dismissed
     const [message, setMessage] = useState(null);
@@ -10,8 +11,21 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
     useEffect(() => {
         if (projectId) {
             fetchRecommendations();
+            fetchTasks();
         }
     }, [projectId, filter]);
+
+    const fetchTasks = async () => {
+        try {
+            const response = await fetch(`http://localhost:3001/api/tasks`);
+            const data = await response.json();
+            if (data.success) {
+                setTasks(data.tasks);
+            }
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    };
 
     const fetchRecommendations = async () => {
         try {
@@ -63,6 +77,22 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
             }
         } catch (error) {
             console.error('Error dismissing recommendation:', error);
+        }
+    };
+
+    const handleArchive = async (recommendationId) => {
+        try {
+            const response = await fetch(`http://localhost:3001/api/recommendations/${recommendationId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'archived' })
+            });
+            const data = await response.json();
+            if (data.success) {
+                fetchRecommendations();
+            }
+        } catch (error) {
+            console.error('Error archiving recommendation:', error);
         }
     };
 
@@ -130,6 +160,7 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
                         <option value="pending">Pending</option>
                         <option value="implemented">Implemented</option>
                         <option value="dismissed">Dismissed</option>
+                        <option value="archived">Archived</option>
                     </select>
                 </div>
             </div>
@@ -247,6 +278,22 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
                                         Implement
                                     </button>
                                     <button
+                                        onClick={() => handleArchive(rec.id)}
+                                        style={{
+                                            padding: '8px 16px',
+                                            backgroundColor: 'rgba(255,255,255,0.03)',
+                                            color: colors.textMuted,
+                                            border: `1px solid ${colors.border}`,
+                                            borderRadius: '8px',
+                                            fontSize: '12px',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        Archive
+                                    </button>
+                                    <button
                                         onClick={() => handleDismiss(rec.id)}
                                         style={{
                                             padding: '8px 16px',
@@ -272,7 +319,40 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
                                     paddingTop: '8px',
                                     borderTop: `1px solid ${colors.border}`
                                 }}>
-                                    Implemented on {new Date(rec.implementedAt).toLocaleDateString()}
+                                    <div>Implemented on {new Date(rec.implementedAt).toLocaleDateString()}</div>
+                                    {rec.taskId && (() => {
+                                        const task = tasks.find(t => t.id === rec.taskId);
+                                        if (task) {
+                                            return (
+                                                <div style={{
+                                                    marginTop: '6px',
+                                                    padding: '6px 10px',
+                                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                                    borderRadius: '6px',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}>
+                                                    <span>📋 {task.title}</span>
+                                                    <span style={{
+                                                        padding: '2px 8px',
+                                                        backgroundColor: task.status === 'done' ? colors.success + '30' :
+                                                                       task.status === 'in_progress' ? colors.primary + '30' :
+                                                                       'rgba(255,255,255,0.1)',
+                                                        color: task.status === 'done' ? colors.success :
+                                                               task.status === 'in_progress' ? colors.primary :
+                                                               colors.textMuted,
+                                                        borderRadius: '6px',
+                                                        fontSize: '10px',
+                                                        fontWeight: 700
+                                                    }}>
+                                                        {task.status.replace('_', ' ')}
+                                                    </span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
                                 </div>
                             )}
                         </div>
