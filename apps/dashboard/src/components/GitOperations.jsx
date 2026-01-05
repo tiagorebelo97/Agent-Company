@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitPull, GitCommit, GitPushIcon, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react';
+import { GitBranch, Download, GitCommit, Upload, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react';
 
 const GitOperations = ({ projectId }) => {
     const [status, setStatus] = useState(null);
@@ -162,24 +162,24 @@ const GitOperations = ({ projectId }) => {
             {message && (
                 <div style={{
                     padding: '12px 16px',
-                    backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 
-                                   message.type === 'error' ? 'rgba(220, 38, 38, 0.1)' : 
-                                   'rgba(245, 158, 11, 0.1)',
-                    border: `1px solid ${message.type === 'success' ? colors.success : 
-                                        message.type === 'error' ? colors.error : 
-                                        colors.warning}`,
+                    backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' :
+                        message.type === 'error' ? 'rgba(220, 38, 38, 0.1)' :
+                            'rgba(245, 158, 11, 0.1)',
+                    border: `1px solid ${message.type === 'success' ? colors.success :
+                        message.type === 'error' ? colors.error :
+                            colors.warning}`,
                     borderRadius: '12px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
                     fontSize: '13px',
-                    color: message.type === 'success' ? colors.success : 
-                           message.type === 'error' ? colors.error : 
-                           colors.warning
+                    color: message.type === 'success' ? colors.success :
+                        message.type === 'error' ? colors.error :
+                            colors.warning
                 }}>
                     {message.type === 'success' ? <CheckCircle size={16} /> :
-                     message.type === 'error' ? <XCircle size={16} /> :
-                     <AlertCircle size={16} />}
+                        message.type === 'error' ? <XCircle size={16} /> :
+                            <AlertCircle size={16} />}
                     <span>{message.text}</span>
                 </div>
             )}
@@ -288,7 +288,7 @@ const GitOperations = ({ projectId }) => {
                             transition: 'all 0.2s'
                         }}
                     >
-                        {operation === 'pull' ? <Loader size={16} className="animate-spin" /> : <GitPull size={16} />}
+                        {operation === 'pull' ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}
                         Pull
                     </button>
                     <button
@@ -310,7 +310,7 @@ const GitOperations = ({ projectId }) => {
                             transition: 'all 0.2s'
                         }}
                     >
-                        {operation === 'push' ? <Loader size={16} className="animate-spin" /> : <GitPushIcon size={16} />}
+                        {operation === 'push' ? <Loader size={16} className="animate-spin" /> : <Upload size={16} />}
                         Push
                     </button>
                 </div>

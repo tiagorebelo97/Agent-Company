@@ -8,8 +8,9 @@ import logger from '../../utils/logger.js';
 import prisma from '../../database/client.js';
 
 class TaskMonitor {
-    constructor(agentRegistry) {
+    constructor(agentRegistry, io) {
         this.agentRegistry = agentRegistry;
+        this.io = io;
         this.checkInterval = 30000; // Check every 30 seconds
         this.isRunning = false;
         this.intervalId = null;
@@ -97,10 +98,32 @@ class TaskMonitor {
             logger.info(`Task ${task.id}: "${task.title}" assigned to ${assignedAgents.map(a => a.id).join(', ')}`);
 
             // Update task status to in_progress
-            await prisma.task.update({
+            const updatedTask = await prisma.task.update({
                 where: { id: task.id },
-                data: { status: 'in_progress' }
+                data: { status: 'in_progress' },
+                include: {
+                    agents: { include: { agent: true } },
+                    subtasks: true,
+                    comments: true
+                }
             });
+
+            // Broadcast status change
+            if (this.io) {
+                this.io.emit('task:updated', updatedTask);
+                this.io.emit('agent:status', {
+                    agentId: assignedAgents[0].id,
+                    status: 'busy',
+                    taskId: task.id,
+                    taskName: task.title
+                });
+                this.io.emit('agent:message', {
+                    from: assignedAgents[0].name,
+                    to: 'System',
+                    message: `Picking up task: ${task.title}`,
+                    timestamp: new Date()
+                });
+            }
 
             // If multiple agents, assign to the first one as lead
             // (In future, could implement more sophisticated assignment logic)
@@ -123,6 +146,7 @@ class TaskMonitor {
                     title: task.title,
                     description: task.description,
                     priority: task.priority,
+                    projectId: task.projectId,
                     tags: JSON.parse(task.tags || '[]'),
                     dueDate: task.dueDate,
                     collaborators: assignedAgents.map(a => ({
@@ -137,9 +161,27 @@ class TaskMonitor {
             leadAgent.executeTask(taskPayload)
                 .then(result => {
                     logger.info(`Task ${task.id} completed successfully:`, result);
+                    if (this.io) {
+                        this.io.emit('agent:status', {
+                            agentId: assignedAgents[0].id,
+                            status: 'active'
+                        });
+                        this.io.emit('agent:message', {
+                            from: assignedAgents[0].name,
+                            to: 'User',
+                            message: `I've completed the task: ${task.title}. Result: ${result.message || 'Success'}`,
+                            timestamp: new Date()
+                        });
+                    }
                 })
                 .catch(error => {
                     logger.error(`Task ${task.id} failed:`, error);
+                    if (this.io) {
+                        this.io.emit('agent:status', {
+                            agentId: assignedAgents[0].id,
+                            status: 'error'
+                        });
+                    }
                 });
 
         } catch (error) {

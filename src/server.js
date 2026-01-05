@@ -97,68 +97,6 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 /**
- * GET /api/projects/:id/files/:path
- * Read file content
- */
-app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        if (!fs.existsSync(absoluteFilePath)) {
-            return res.status(404).json({ success: false, error: 'File not found' });
-        }
-
-        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
-        res.json({ success: true, content, path: filePath });
-    } catch (error) {
-        logger.error('Error reading file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
  * POST /api/projects
  * Create a new project
  */
@@ -321,6 +259,39 @@ app.get('/api/projects/:id', async (req, res) => {
         res.json({ success: true, project });
     } catch (error) {
         logger.error('Error fetching project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/projects/:id
+ * Update project details (status, analysis results, assigned agents, etc.)
+ */
+app.patch('/api/projects/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, analysisResults, suggestedAgents, assignedAgents, localPath, clientName, endDate } = req.body;
+
+        const updateData = {};
+        if (status) updateData.status = status;
+        if (analysisResults) updateData.analysisResults = analysisResults;
+        if (suggestedAgents) updateData.suggestedAgents = suggestedAgents;
+        if (assignedAgents) updateData.assignedAgents = assignedAgents;
+        if (localPath) updateData.localPath = localPath;
+        if (clientName) updateData.clientName = clientName;
+        if (endDate) updateData.endDate = new Date(endDate);
+
+        const project = await prisma.project.update({
+            where: { id },
+            data: updateData
+        });
+
+        logger.info(`Project updated: ${project.id} - ${project.name}`);
+        io.emit('project:updated', project);
+
+        res.json({ success: true, project });
+    } catch (error) {
+        logger.error('Error updating project:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -710,6 +681,17 @@ app.post('/api/projects/:id/analyze', async (req, res) => {
             logger.error(`Failed to trigger analysis for project ${id}:`, err);
         });
 
+        // Broadcast to Activity Feed and UI
+        io.emit('analysis:started', { projectId: id, taskId: task.id, projectName: project.name });
+        io.emit('task:created', completeTask);
+        io.emit('agent:status', { agentId: 'pm', status: 'busy', taskId: task.id });
+        io.emit('agent:message', {
+            from: 'Project Manager',
+            to: 'System',
+            message: `Starting comprehensive analysis for project "${project.name}"...`,
+            timestamp: new Date()
+        });
+
         res.json({
             success: true,
             message: 'Project analysis initiated',
@@ -741,7 +723,7 @@ app.get('/api/projects/:id/git/status', async (req, res) => {
         const absolutePath = path.resolve(process.cwd(), project.localPath);
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
-        
+
         const status = await git.status();
         res.json({ success: true, status });
     } catch (error) {
@@ -766,12 +748,12 @@ app.post('/api/projects/:id/git/pull', async (req, res) => {
         const absolutePath = path.resolve(process.cwd(), project.localPath);
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
-        
+
         const result = await git.pull();
-        
+
         logger.info(`Git pull completed for project ${id}`);
         io.emit('git:operation', { projectId: id, operation: 'pull', success: true });
-        
+
         res.json({ success: true, result });
     } catch (error) {
         logger.error('Error pulling git changes:', error);
@@ -796,12 +778,12 @@ app.post('/api/projects/:id/git/push', async (req, res) => {
         const absolutePath = path.resolve(process.cwd(), project.localPath);
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
-        
+
         const result = await git.push();
-        
+
         logger.info(`Git push completed for project ${id}`);
         io.emit('git:operation', { projectId: id, operation: 'push', success: true });
-        
+
         res.json({ success: true, result });
     } catch (error) {
         logger.error('Error pushing git changes:', error);
@@ -831,19 +813,19 @@ app.post('/api/projects/:id/git/commit', async (req, res) => {
         const absolutePath = path.resolve(process.cwd(), project.localPath);
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
-        
+
         // Add files if specified, otherwise add all
         if (files && files.length > 0) {
             await git.add(files);
         } else {
             await git.add('.');
         }
-        
+
         const result = await git.commit(message);
-        
+
         logger.info(`Git commit completed for project ${id}`);
         io.emit('git:operation', { projectId: id, operation: 'commit', success: true });
-        
+
         res.json({ success: true, result });
     } catch (error) {
         logger.error('Error committing git changes:', error);
@@ -1020,67 +1002,6 @@ app.delete('/api/projects/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-/**
- * GET /api/projects/:id/files/:path
- * Read file content
- */
-app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        if (!fs.existsSync(absoluteFilePath)) {
-            return res.status(404).json({ success: false, error: 'File not found' });
-        }
-
-        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
-        res.json({ success: true, content, path: filePath });
-    } catch (error) {
-        logger.error('Error reading file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 // ============================================
 // Recommendations API
@@ -1094,10 +1015,10 @@ app.get('/api/projects/:id/recommendations', async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.query;
-        
+
         const where = { projectId: id };
         if (status) where.status = status;
-        
+
         const recommendations = await prisma.recommendation.findMany({
             where,
             orderBy: [
@@ -1105,7 +1026,7 @@ app.get('/api/projects/:id/recommendations', async (req, res) => {
                 { createdAt: 'desc' }
             ]
         });
-        
+
         res.json({ success: true, recommendations });
     } catch (error) {
         logger.error('Error fetching recommendations:', error);
@@ -1121,11 +1042,11 @@ app.post('/api/projects/:id/recommendations', async (req, res) => {
     try {
         const { id } = req.params;
         const { title, description, priority, category, createdBy } = req.body;
-        
+
         if (!title) {
             return res.status(400).json({ success: false, error: 'Title is required' });
         }
-        
+
         const recommendation = await prisma.recommendation.create({
             data: {
                 projectId: id,
@@ -1136,10 +1057,10 @@ app.post('/api/projects/:id/recommendations', async (req, res) => {
                 createdBy: createdBy || 'pm'
             }
         });
-        
+
         logger.info(`Recommendation created: ${recommendation.id}`);
         io.emit('recommendation:created', recommendation);
-        
+
         res.json({ success: true, recommendation });
     } catch (error) {
         logger.error('Error creating recommendation:', error);
@@ -1155,20 +1076,20 @@ app.patch('/api/recommendations/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { status, taskId } = req.body;
-        
+
         const updateData = {};
         if (status) updateData.status = status;
         if (taskId) updateData.taskId = taskId;
         if (status === 'implemented') updateData.implementedAt = new Date();
-        
+
         const recommendation = await prisma.recommendation.update({
             where: { id },
             data: updateData
         });
-        
+
         logger.info(`Recommendation updated: ${id}`);
         io.emit('recommendation:updated', recommendation);
-        
+
         res.json({ success: true, recommendation });
     } catch (error) {
         logger.error('Error updating recommendation:', error);
@@ -1184,20 +1105,20 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
     try {
         const { id } = req.params;
         const { agentIds } = req.body;
-        
+
         const recommendation = await prisma.recommendation.findUnique({
             where: { id },
             include: { project: true }
         });
-        
+
         if (!recommendation) {
             return res.status(404).json({ success: false, error: 'Recommendation not found' });
         }
-        
+
         if (recommendation.status === 'implemented') {
             return res.status(400).json({ success: false, error: 'Recommendation already implemented' });
         }
-        
+
         // Create a task for the recommendation
         const task = await prisma.task.create({
             data: {
@@ -1213,7 +1134,7 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
                 })
             }
         });
-        
+
         // Assign agents if provided
         if (agentIds && agentIds.length > 0) {
             await Promise.all(
@@ -1227,7 +1148,7 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
                 )
             );
         }
-        
+
         // Update recommendation status
         await prisma.recommendation.update({
             where: { id },
@@ -1237,7 +1158,7 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
                 implementedAt: new Date()
             }
         });
-        
+
         // Fetch complete task
         const completeTask = await prisma.task.findUnique({
             where: { id: task.id },
@@ -1247,11 +1168,11 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
                 comments: true
             }
         });
-        
+
         logger.info(`Recommendation ${id} implemented as task ${task.id}`);
         io.emit('recommendation:implemented', { recommendationId: id, taskId: task.id });
         io.emit('task:created', completeTask);
-        
+
         res.json({ success: true, task: completeTask, recommendationId: id });
     } catch (error) {
         logger.error('Error implementing recommendation:', error);
@@ -1270,11 +1191,11 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
 app.get('/api/meetings', async (req, res) => {
     try {
         const { projectId, status } = req.query;
-        
+
         const where = {};
         if (projectId) where.projectId = projectId;
         if (status) where.status = status;
-        
+
         const meetings = await prisma.meeting.findMany({
             where,
             include: {
@@ -1283,7 +1204,7 @@ app.get('/api/meetings', async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-        
+
         res.json({ success: true, meetings });
     } catch (error) {
         logger.error('Error fetching meetings:', error);
@@ -1298,7 +1219,7 @@ app.get('/api/meetings', async (req, res) => {
 app.get('/api/meetings/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         const meeting = await prisma.meeting.findUnique({
             where: { id },
             include: {
@@ -1306,11 +1227,11 @@ app.get('/api/meetings/:id', async (req, res) => {
                 project: true
             }
         });
-        
+
         if (!meeting) {
             return res.status(404).json({ success: false, error: 'Meeting not found' });
         }
-        
+
         res.json({ success: true, meeting });
     } catch (error) {
         logger.error('Error fetching meeting:', error);
@@ -1325,15 +1246,15 @@ app.get('/api/meetings/:id', async (req, res) => {
 app.post('/api/meetings', async (req, res) => {
     try {
         const { title, description, projectId, agentIds, createdBy } = req.body;
-        
+
         if (!title) {
             return res.status(400).json({ success: false, error: 'Title is required' });
         }
-        
+
         if (!agentIds || agentIds.length === 0) {
             return res.status(400).json({ success: false, error: 'At least one agent must be invited' });
         }
-        
+
         const meeting = await prisma.meeting.create({
             data: {
                 title,
@@ -1342,7 +1263,7 @@ app.post('/api/meetings', async (req, res) => {
                 createdBy: createdBy || 'user'
             }
         });
-        
+
         // Add participants
         await Promise.all(
             agentIds.map(agentId =>
@@ -1354,7 +1275,7 @@ app.post('/api/meetings', async (req, res) => {
                 })
             )
         );
-        
+
         // Fetch complete meeting
         const completeMeeting = await prisma.meeting.findUnique({
             where: { id: meeting.id },
@@ -1363,10 +1284,10 @@ app.post('/api/meetings', async (req, res) => {
                 project: true
             }
         });
-        
+
         logger.info(`Meeting created: ${meeting.id} with ${agentIds.length} participants`);
         io.emit('meeting:created', completeMeeting);
-        
+
         res.json({ success: true, meeting: completeMeeting });
     } catch (error) {
         logger.error('Error creating meeting:', error);
@@ -1382,20 +1303,20 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
     try {
         const { id } = req.params;
         const { fromId, content } = req.body;
-        
+
         if (!content) {
             return res.status(400).json({ success: false, error: 'Message content is required' });
         }
-        
+
         const meeting = await prisma.meeting.findUnique({
             where: { id },
             include: { participants: true, project: true }
         });
-        
+
         if (!meeting) {
             return res.status(404).json({ success: false, error: 'Meeting not found' });
         }
-        
+
         // Parse existing transcript
         let transcript = [];
         try {
@@ -1403,7 +1324,7 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
         } catch (e) {
             transcript = [];
         }
-        
+
         // Add new message
         const message = {
             id: Date.now().toString(),
@@ -1411,9 +1332,9 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
             content,
             timestamp: new Date().toISOString()
         };
-        
+
         transcript.push(message);
-        
+
         // Update meeting
         await prisma.meeting.update({
             where: { id },
@@ -1421,36 +1342,36 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                 transcript: JSON.stringify(transcript)
             }
         });
-        
+
         logger.info(`Message added to meeting ${id}`);
         io.emit('meeting:message', { meetingId: id, message });
-        
+
         // If message is from user, get responses from agents
         if (fromId === 'user' || !fromId) {
             const agentIds = meeting.participants.map(p => p.agentId);
-            
+
             // Send message to agents in parallel (simplified - in reality would need context)
             const responses = await Promise.all(
                 agentIds.map(async (agentId) => {
                     const agent = AgentRegistry.getAgent(agentId);
                     if (!agent) return null;
-                    
+
                     try {
                         // Include project context if available
                         const context = meeting.projectId ? {
                             projectId: meeting.projectId,
                             projectName: meeting.project?.name
                         } : {};
-                        
+
                         const agentResponse = await agent.handleChatMessage(content, transcript, null, meeting.projectId);
-                        
+
                         const responseMessage = {
                             id: Date.now().toString() + '-' + agentId,
                             fromId: agentId,
                             content: agentResponse.response || agentResponse.result || 'No response',
                             timestamp: new Date().toISOString()
                         };
-                        
+
                         transcript.push(responseMessage);
                         return responseMessage;
                     } catch (err) {
@@ -1459,7 +1380,7 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                     }
                 })
             );
-            
+
             // Update meeting with agent responses
             await prisma.meeting.update({
                 where: { id },
@@ -1467,13 +1388,13 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                     transcript: JSON.stringify(transcript)
                 }
             });
-            
+
             // Emit agent responses
             responses.filter(Boolean).forEach(response => {
                 io.emit('meeting:message', { meetingId: id, message: response });
             });
         }
-        
+
         res.json({ success: true, message });
     } catch (error) {
         logger.error('Error adding message to meeting:', error);
@@ -1489,7 +1410,7 @@ app.patch('/api/meetings/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        
+
         const updateData = {};
         if (status) {
             updateData.status = status;
@@ -1497,7 +1418,7 @@ app.patch('/api/meetings/:id', async (req, res) => {
                 updateData.completedAt = new Date();
             }
         }
-        
+
         const meeting = await prisma.meeting.update({
             where: { id },
             data: updateData,
@@ -1506,10 +1427,10 @@ app.patch('/api/meetings/:id', async (req, res) => {
                 project: true
             }
         });
-        
+
         logger.info(`Meeting updated: ${id}`);
         io.emit('meeting:updated', meeting);
-        
+
         res.json({ success: true, meeting });
     } catch (error) {
         logger.error('Error updating meeting:', error);
@@ -1525,7 +1446,7 @@ app.get('/api/meetings/:id/export', async (req, res) => {
     try {
         const { id } = req.params;
         const { format } = req.query; // 'json' or 'text'
-        
+
         const meeting = await prisma.meeting.findUnique({
             where: { id },
             include: {
@@ -1533,18 +1454,18 @@ app.get('/api/meetings/:id/export', async (req, res) => {
                 project: true
             }
         });
-        
+
         if (!meeting) {
             return res.status(404).json({ success: false, error: 'Meeting not found' });
         }
-        
+
         let transcript = [];
         try {
             transcript = JSON.parse(meeting.transcript);
         } catch (e) {
             transcript = [];
         }
-        
+
         if (format === 'text') {
             // Format as plain text
             let text = `Meeting: ${meeting.title}\n`;
@@ -1553,14 +1474,14 @@ app.get('/api/meetings/:id/export', async (req, res) => {
                 text += `Project: ${meeting.project.name}\n`;
             }
             text += `\n${'='.repeat(60)}\n\n`;
-            
+
             transcript.forEach(msg => {
                 const agent = AgentRegistry.getAgent(msg.fromId);
                 const name = msg.fromId === 'user' ? 'User' : agent?.name || msg.fromId;
                 text += `[${new Date(msg.timestamp).toLocaleTimeString()}] ${name}:\n`;
                 text += `${msg.content}\n\n`;
             });
-            
+
             res.setHeader('Content-Type', 'text/plain');
             res.setHeader('Content-Disposition', `attachment; filename="meeting-${id}.txt"`);
             res.send(text);
@@ -1589,7 +1510,7 @@ app.get('/api/meetings/:id/export', async (req, res) => {
                 }),
                 transcript
             };
-            
+
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Content-Disposition', `attachment; filename="meeting-${id}.json"`);
             res.json(exportData);
@@ -3084,34 +3005,7 @@ app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
 });
 
 /**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+ * POST /api/tasks/:id/subtasks
 
 /**
  * POST /api/tasks/:id/subtasks
@@ -3137,67 +3031,9 @@ app.post('/api/tasks/:id/subtasks', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-/**
- * GET /api/projects/:id/files/:path
- * Read file content
- */
-app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        if (!fs.existsSync(absoluteFilePath)) {
-            return res.status(404).json({ success: false, error: 'File not found' });
-        }
-
-        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
-        res.json({ success: true, content, path: filePath });
-    } catch (error) {
-        logger.error('Error reading file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 /**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+ * PATCH /api/tasks/:taskId/subtasks/:subtaskId
 
 /**
  * PATCH /api/tasks/:taskId/subtasks/:subtaskId
@@ -3309,67 +3145,9 @@ app.post('/api/tasks/:id/comments', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-/**
- * GET /api/projects/:id/files/:path
- * Read file content
- */
-app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
 
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        if (!fs.existsSync(absoluteFilePath)) {
-            return res.status(404).json({ success: false, error: 'File not found' });
-        }
-
-        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
-        res.json({ success: true, content, path: filePath });
-    } catch (error) {
-        logger.error('Error reading file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// ============================================
+// WebSocket Events
 
 // ============================================
 // WebSocket Events
@@ -3385,10 +3163,21 @@ io.on('connection', (socket) => {
     // Handle chat messages
     socket.on('chat:message', async (data) => {
         try {
-            const { message, agentId } = data;
+            const { message, agentId, projectId } = data;
             const agent = AgentRegistry.getAgent(agentId || 'pm');
 
             if (agent) {
+                // 1. Save user message to database
+                const userMsg = await prisma.message.create({
+                    data: {
+                        fromId: 'user',
+                        toId: agent.id,
+                        content: message,
+                        type: 'chat'
+                    }
+                });
+
+                // 2. Load recent history for context
                 const history = await prisma.message.findMany({
                     where: {
                         OR: [
@@ -3400,13 +3189,27 @@ io.on('connection', (socket) => {
                     take: 10
                 });
 
+                // 3. Get response from agent
                 const agentResponse = await agent.handleChatMessage(
                     message,
                     history,
                     data.taskId,
-                    data.projectId
+                    projectId
                 );
 
+                const responseText = agentResponse.response || agentResponse.result || agentResponse.message;
+
+                // 4. Save agent response to database
+                const agentMsg = await prisma.message.create({
+                    data: {
+                        fromId: agent.id,
+                        toId: 'user',
+                        content: responseText,
+                        type: 'chat'
+                    }
+                });
+
+                // 5. Broadcast response
                 socket.emit('chat:response', {
                     agent: {
                         id: agent.id,
@@ -3414,9 +3217,17 @@ io.on('connection', (socket) => {
                         emoji: agent.emoji
                     },
                     response: {
-                        text: agentResponse.response || agentResponse.result || agentResponse.message,
+                        text: responseText,
                         interactive: agentResponse.interactive
                     }
+                });
+
+                // Also emit to agents:message for ActivityFeed
+                io.emit('agent:message', {
+                    from: agent.name,
+                    to: 'User',
+                    message: responseText,
+                    timestamp: new Date()
                 });
             }
         } catch (error) {
@@ -3513,67 +3324,9 @@ AgentRegistry.on('agent:chat:message', async (data) => {
         logger.error('Failed to persist proactive agent message:', e);
     }
 });
-/**
- * GET /api/projects/:id/files/:path
- * Read file content
- */
-app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
 
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        if (!fs.existsSync(absoluteFilePath)) {
-            return res.status(404).json({ success: false, error: 'File not found' });
-        }
-
-        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
-        res.json({ success: true, content, path: filePath });
-    } catch (error) {
-        logger.error('Error reading file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * PUT /api/projects/:id/files/:path
- * Write file content
- */
-app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
-    try {
-        const { id, path: filePath } = req.params;
-        const { content } = req.body;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project || !project.localPath) {
-            return res.status(404).json({ success: false, error: 'Project or local path not found' });
-        }
-
-        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
-        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
-
-        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
-            return res.status(403).json({ success: false, error: 'Access denied' });
-        }
-
-        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
-        logger.info(`File updated: ${absoluteFilePath}`);
-        res.json({ success: true, path: filePath });
-    } catch (error) {
-        logger.error('Error writing file:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// ============================================
+// Initialize Agents
 
 // ============================================
 // Initialize Agents
@@ -3665,7 +3418,7 @@ async function startServer() {
 
         // 4. Start TaskMonitor for autonomous task execution
         const TaskMonitor = (await import('./agents/utils/TaskMonitor.js')).default;
-        const taskMonitor = new TaskMonitor(AgentRegistry);
+        const taskMonitor = new TaskMonitor(AgentRegistry, io);
         taskMonitor.start();
         logger.info('TaskMonitor started - agents will autonomously pick up tasks');
 
