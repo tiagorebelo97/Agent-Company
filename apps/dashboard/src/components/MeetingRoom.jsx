@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Send, Download, CheckCircle, Video, MessageCircle } from 'lucide-react';
+import { Users, Send, Download, CheckCircle, Video, MessageCircle, ListTodo } from 'lucide-react';
 
 const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
     const [meeting, setMeeting] = useState(null);
     const [message, setMessage] = useState('');
     const [transcript, setTranscript] = useState([]);
+    const [linkedTasks, setLinkedTasks] = useState([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -23,6 +24,20 @@ const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
                     setTranscript(JSON.parse(data.meeting.transcript));
                 } catch (e) {
                     setTranscript([]);
+                }
+                // Fetch linked tasks
+                try {
+                    const taskIds = JSON.parse(data.meeting.linkedTasks || '[]');
+                    if (taskIds.length > 0) {
+                        const tasksResponse = await fetch(`http://localhost:3001/api/tasks`);
+                        const tasksData = await tasksResponse.json();
+                        if (tasksData.success) {
+                            const linked = tasksData.tasks.filter(t => taskIds.includes(t.id));
+                            setLinkedTasks(linked);
+                        }
+                    }
+                } catch (e) {
+                    setLinkedTasks([]);
                 }
             }
         } catch (error) {
@@ -201,6 +216,55 @@ const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
                     );
                 })}
             </div>
+
+            {/* Linked Tasks */}
+            {linkedTasks.length > 0 && (
+                <div style={{
+                    padding: '12px',
+                    backgroundColor: 'rgba(43, 129, 255, 0.1)',
+                    borderRadius: '12px',
+                    border: `1px solid ${colors.primary}30`
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                        <ListTodo size={16} color={colors.primary} />
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: colors.primary }}>
+                            Tasks Created ({linkedTasks.length})
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {linkedTasks.map(task => (
+                            <div
+                                key={task.id}
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '8px',
+                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                    borderRadius: '8px',
+                                    fontSize: '11px'
+                                }}
+                            >
+                                <span style={{ flex: 1 }}>{task.title}</span>
+                                <span style={{
+                                    padding: '2px 8px',
+                                    backgroundColor: task.status === 'done' ? colors.success + '30' :
+                                                     task.status === 'in_progress' ? colors.primary + '30' : 
+                                                     'rgba(255,255,255,0.1)',
+                                    color: task.status === 'done' ? colors.success :
+                                           task.status === 'in_progress' ? colors.primary :
+                                           colors.textMuted,
+                                    borderRadius: '6px',
+                                    fontSize: '10px',
+                                    fontWeight: 700
+                                }}>
+                                    {task.status.replace('_', ' ')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Transcript */}
             <div style={{

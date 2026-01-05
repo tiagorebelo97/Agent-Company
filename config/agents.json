@@ -38,25 +38,26 @@
         ]
     },
     {
-        "id": "design",
-        "name": "Design Agent",
-        "role": "UI/UX & Aesthetics",
-        "color": "#2B81FF",
+        "id": "designer",
+        "name": "Design Specialist",
+        "role": "UI/UX Design & Visual Concepts",
+        "color": "#ec4899",
         "emoji": "\ud83c\udfa8",
         "skills": [
+            "UI/UX Design",
+            "Visual Design",
             "Design Systems",
-            "Component Design",
-            "Color Theory",
-            "Typography",
-            "Micro-interactions",
-            "Loading States"
+            "Prototyping",
+            "Brand Identity",
+            "User Research",
+            "Accessibility",
+            "Design Patterns"
         ],
         "category": "design",
         "mcps": [
             "filesystem"
         ],
-        "skipScaffold": true,
-        "customPath": "src/agents/implementations/DesignAgent/main.py"
+        "skipScaffold": true
     },
     {
         "id": "accessibility",

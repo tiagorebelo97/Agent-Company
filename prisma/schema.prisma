@@ -28,6 +28,7 @@ model Agent {
   tasks            TaskAgent[]
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+  knowledgeItems   AgentKnowledge[]
 }
 
 model Project {
@@ -134,10 +135,11 @@ model Recommendation {
   description   String
   priority      String   @default("medium") // low, medium, high
   category      String?  // e.g., "performance", "security", "architecture"
-  status        String   @default("pending") // pending, implemented, dismissed
+  status        String   @default("pending") // pending, implemented, dismissed, archived
   implementedAt DateTime?
   taskId        String?  // linked task if implemented
   createdBy     String   @default("pm") // agent that created the recommendation
+  metadata      String?  @default("{}") // JSON for images, design refs, etc.
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -154,6 +156,7 @@ model Meeting {
   updatedAt       DateTime        @updatedAt
   completedAt     DateTime?
   transcript      String          @default("[]") // JSON array of messages
+  linkedTasks     String          @default("[]") // JSON array of task IDs created from meeting
   participants    MeetingParticipant[]
 }
 
@@ -165,4 +168,20 @@ model MeetingParticipant {
   joinedAt    DateTime @default(now())
   
   @@unique([meetingId, agentId])
+}
+
+model AgentKnowledge {
+  id          String   @id @default(uuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  type        String   // document, image, video, url, text
+  content     String   // File path, URL, or text content
+  metadata    String?  @default("{}") // JSON for additional data
+  skillTags   String   @default("[]") // JSON array of skill tags
+  usageCount  Int      @default(0)
+  lastUsed    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
