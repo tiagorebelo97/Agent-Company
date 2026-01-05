@@ -2,7 +2,14 @@ import os
 import logging
 import time
 import random
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 from typing import Optional, List, Dict, Any
 from enum import Enum
 from dotenv import load_dotenv
@@ -146,14 +153,29 @@ class LLMManager:
                 self.f = None
             def __enter__(self):
                 self.f = open(self.path, 'w')
-                # Wait for lock (blocks if another agent is calling)
-                # This spaces out calls effectively
-                fcntl.flock(self.f, fcntl.LOCK_EX)
+                if fcntl:
+                    # Unix/Linux locking
+                    fcntl.flock(self.f, fcntl.LOCK_EX)
+                elif msvcrt:
+                    # Windows locking
+                    # Seek to start and lock 1 byte
+                    self.f.seek(0)
+                    # msvcrt.LK_LOCK blocks until the lock is acquired
+                    # We use a very small file so 1 byte is enough
+                    msvcrt.locking(self.f.fileno(), msvcrt.LK_LOCK, 1)
+                
                 # Sleep a tiny bit to avoid split-second overlaps
                 time.sleep(0.5 + random.random()) 
             def __exit__(self, exc_type, exc_val, exc_tb):
                 if self.f:
-                    fcntl.flock(self.f, fcntl.LOCK_UN)
+                    if fcntl:
+                        fcntl.flock(self.f, fcntl.LOCK_UN)
+                    elif msvcrt:
+                        try:
+                            self.f.seek(0)
+                            msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+                        except:
+                            pass
                     self.f.close()
         return SlotLock(self.lock_file)
     

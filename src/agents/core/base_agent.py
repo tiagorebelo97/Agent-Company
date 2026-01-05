@@ -259,6 +259,8 @@ class PythonBaseAgent(ABC):
             system_role = self._get_system_context() if hasattr(self, '_get_system_context') else f"You are {self.name}, a helpful AI assistant."
             if context_project:
                 system_role += context_project
+            
+            system_role += """
 IMPORTANT: Your goal is to move from planning to EXECUTION as fast as possible.
 You MUST return your response as a JSON object with this exact structure:
 {
@@ -280,7 +282,7 @@ Rules:
             if self.llm_manager:
                 response_raw = self.llm_manager.generate_response(
                     prompt=user_message,
-                    system_context=system_context,
+                    system_context=system_role,
                     history=history
                 )
                 
@@ -288,7 +290,7 @@ Rules:
                     try:
                         # Extract JSON from potential markdown/text wrap
                         import re
-                        json_match = re.search(r'\{.*\}', response_raw, re.DOTALL)
+                        json_match = re.search(r'\{.*\}', str(response_raw), re.DOTALL)
                         if json_match:
                             data = json.loads(json_match.group())
                             text = data.get('text', response_raw)

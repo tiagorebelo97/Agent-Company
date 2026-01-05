@@ -38,7 +38,9 @@ class ProjectManager(PythonBaseAgent):
         title = task.get('title', '')
         
         # Detect feature implementation requests
-        if task_type == 'feature' or 'implement' in description.lower() or 'create' in description.lower():
+        if task_type == 'project_analysis':
+            return self.analyze_project_repository(task)
+        elif task_type == 'feature' or 'implement' in description.lower() or 'create' in description.lower():
             return self.orchestrate_feature_implementation(task)
         elif task_type == 'create_feature':
             return self.create_feature(description, task.get('requirements', ''))
@@ -60,6 +62,160 @@ class ProjectManager(PythonBaseAgent):
                 'result': f"PM coordinated task: {title or 'Untitled'}",
                 'message': f"Task type '{task_type}' processed by Project Manager"
             }
+
+    def analyze_project_repository(self, task) -> Dict:
+        """
+        Deep analysis of a project repository to understand stack and requirements
+        """
+        self.log("🚀 DEBUG: UNTRACED ENTRY into analyze_project_repository")
+        project_id = task.get('projectId')
+        
+        # Handle requirements - can be string or dict
+        requirements_raw = task.get('requirements', '{}')
+        if isinstance(requirements_raw, str):
+            requirements = json.loads(requirements_raw)
+        else:
+            requirements = requirements_raw
+            
+        local_path = requirements.get('local_path')
+        repo_url = requirements.get('repo_url')
+
+        path_to_scan = local_path
+        
+        # If no local path, try to use repoUrl and clone it
+        if not path_to_scan and repo_url:
+            self.log(f"🚚 PM: Local path missing for {repo_url}. Attempting to clone...")
+            try:
+                # Create a local clones directory if it doesn't exist
+                clones_dir = "projects_cache"
+                repo_name = repo_url.split('/')[-1].replace('.git', '')
+                target_path = os.path.join(clones_dir, repo_name)
+                
+                # Check if already cloned
+                self.call_mcp_tool(None, "run_command", {"command": f"mkdir -p {clones_dir}"})
+                
+                clone_res = self.call_mcp_tool("git", "git_clone", {
+                    "url": repo_url,
+                    "path": target_path
+                })
+                
+                path_to_scan = target_path
+                # Update project with the new local path
+                self.call_mcp_tool(None, "project_update", {
+                    "projectId": project_id,
+                    "localPath": path_to_scan
+                })
+                self.log(f"✅ PM: Repository cloned to {path_to_scan}")
+            except Exception as e:
+                self.log(f"⚠️ PM: Failed to clone repository: {str(e)}")
+                # Continue with repo_url as fallback, though tools might fail
+                path_to_scan = repo_url
+
+        if not path_to_scan:
+            return {'success': False, 'error': 'No local path or repository URL provided'}
+
+        self.log(f"🔍 PM: Analyzing project repository at: {path_to_scan}")
+        self.update_status('thinking')
+
+        # 1. List files to get a sense of the structure
+        try:
+            # Note: project_list_files currently lists one level. 
+            # We use it on the root to see top-level structure.
+            files_res = self.call_mcp_tool(None, "project_list_files", {"dirPath": path_to_scan})
+            file_list = files_res.get('files', []) if files_res else []
+            
+            # 2. Read key entry files (package.json, requirements.txt, etc.)
+            key_files = ['package.json', 'requirements.txt', 'README.md', 'prisma/schema.prisma', 'docker-compose.yml']
+            context_data = {}
+            
+            for kf in key_files:
+                try:
+                    read_res = self.call_mcp_tool(None, "project_read_file", {"filePath": os.path.join(path_to_scan, kf)})
+                    if read_res and read_res.get('content'):
+                        context_data[kf] = read_res['content']
+                except:
+                    pass
+
+            # 3. Use LLM to analyze and suggest agents
+            prompt = f"""
+Analyze this project structure and key file contents:
+
+Project Path: {path_to_scan}
+Files: {json.dumps(file_list[:100])} # First 100 files
+Context: {json.dumps({k: v[:2000] for k, v in context_data.items()})}
+
+Provide a professional analysis in JSON format ONLY:
+{{
+  "stack": "Tech stack description",
+  "complexity": "Low/Medium/High with brief reason",
+  "security": "Initial security observation",
+  "recommendations": ["list", "of", "3-5", "technical", "recommendations"],
+  "suggested_agents": ["list", "of", "agent_ids", "needed"]
+}}
+
+Available specialized agents (mapped by ID):
+- frontend: Frontend Engineer (React/Vue/JS)
+- backend: Backend Engineer (Node/Python/Go)
+- db: Database Architect (SQL/NoSQL/Prisma)
+- designer: UI/UX DesignAgent
+- qa: QA & Testing Agent
+- devops: DevOps & Cloud Agent
+- security: Security Audit Agent
+- seomarketing: SEO & Marketing Agent
+- contentwriter: Documentation & Content Agent
+"""
+            
+            response = self.llm_manager.generate_response(
+                prompt=prompt,
+                system_context="You are a Technical Project Architect. Analyze repositories to define the perfect agent swarm. Return JSON ONLY."
+            )
+
+            if not response:
+                 self.log("⚠️ PM: LLM returned empty response for analysis")
+                 return {'success': False, 'error': 'Empty LLM response'}
+
+            # 4. Parse response and update database
+            import re
+            self.log(f"🕵️ DEBUG: Response type: {type(response)}, content: {str(response)[:100]}")
+            json_match = re.search(r'\{.*\}', str(response), re.DOTALL)
+            analysis_results = {}
+            suggested_agents = []
+            
+            if json_match:
+                try:
+                    analysis_results = json.loads(json_match.group())
+                    suggested_agents = analysis_results.get('suggested_agents', [])
+                except Exception as e:
+                    self.log(f"⚠️ PM: JSON parse failed: {str(e)}")
+                    analysis_results = {"error": "Failed to parse analysis results"}
+
+            # Fallback if empty
+            if not suggested_agents:
+                suggested_agents = ["frontend", "backend"]
+
+            # Update project in DB using the new project_update tool
+            self.call_mcp_tool(None, "project_update", {
+                "projectId": project_id,
+                "analysisResults": json.dumps(analysis_results),
+                "suggestedAgents": json.dumps(suggested_agents)
+            })
+            
+            # Since we don't have a direct "prisma update" tool easily available via CLI with JSON strings, 
+            # the server will likely handle the DB update if we return it in the result
+            # or we can use a custom tool if implemented.
+            
+            self.update_status('idle')
+            return {
+                'success': True,
+                'result': analysis_results,
+                'suggested_agents': suggested_agents,
+                'message': f"Analysis complete for project {project_id}. Identified {analysis_results.get('stack')} stack."
+            }
+
+        except Exception as e:
+            self.log(f"❌ Analysis failed: {str(e)}")
+            self.update_status('error')
+            return {'success': False, 'error': str(e)}
 
     def orchestrate_feature_implementation(self, task) -> Dict:
         """
@@ -198,7 +354,7 @@ Return as JSON array with format:
                 
                 # Try to parse JSON from response
                 import re
-                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                json_match = re.search(r'\[.*\]', str(response), re.DOTALL)
                 if json_match:
                     subtasks_data = json.loads(json_match.group())
                     

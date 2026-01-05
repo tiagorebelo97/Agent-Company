@@ -227,6 +227,21 @@ export class BaseAgent extends EventEmitter {
                     result = { success: false, error: err.message };
                 }
             }
+            else if (toolName === 'project_update') {
+                try {
+                    const { projectId, ...data } = args;
+                    // Handle JSON strings if necessary (prisma expects objects for JSON fields if using json model)
+                    // but our schema uses String? @default("{}").
+                    const project = await prisma.project.update({
+                        where: { id: projectId },
+                        data: data
+                    });
+                    result = { success: true, project };
+                    logger.info(`${this.name}: Updated project ${projectId}`);
+                } catch (err) {
+                    result = { success: false, error: err.message };
+                }
+            }
             else if (toolName === 'run_command') {
                 try {
                     const { stdout, stderr } = await execAsync(args.command, {

@@ -59,6 +59,14 @@ class GitMCPServer {
                 parameters: {
                     path: { type: 'string', description: 'Repository path' }
                 }
+            },
+            {
+                name: 'git_clone',
+                description: 'Clone a repository',
+                parameters: {
+                    url: { type: 'string', description: 'Repository URL' },
+                    path: { type: 'string', description: 'Target destination path' }
+                }
             }
         ];
 
@@ -82,6 +90,9 @@ class GitMCPServer {
                 return await git.pull();
             case 'git_init':
                 return await git.init();
+            case 'git_clone':
+                const targetPath = join(this.basePath, args.path);
+                return await simpleGit().clone(args.url, targetPath);
             default:
                 throw new Error(`Unknown tool: ${toolName}`);
         }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Check } from 'lucide-react';
 import TaskProgressTracker from './TaskProgressTracker';
+import TaskSubtasks from './TaskSubtasks';
+import TaskComments from './TaskComments';
 
 const TaskModal = ({ task, agents, onClose, onSave }) => {
     const [formData, setFormData] = useState({
@@ -15,6 +17,8 @@ const TaskModal = ({ task, agents, onClose, onSave }) => {
     const [newTag, setNewTag] = useState('');
     const [newSubtask, setNewSubtask] = useState('');
     const [subtasks, setSubtasks] = useState([]);
+    const [comments, setComments] = useState([]);
+    const [currentTask, setCurrentTask] = useState(task);
 
     const colors = {
         bg: '#000000',
@@ -28,25 +32,42 @@ const TaskModal = ({ task, agents, onClose, onSave }) => {
 
     useEffect(() => {
         if (task) {
-            let tags = [];
-            try {
-                tags = typeof task.tags === 'string' ? JSON.parse(task.tags) : task.tags || [];
-            } catch (e) {
-                tags = [];
-            }
-
-            setFormData({
-                title: task.title || '',
-                description: task.description || '',
-                priority: task.priority || 'medium',
-                status: task.status || 'todo',
-                tags,
-                dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
-                agentIds: task.agents?.map(ta => ta.agentId) || []
-            });
-            setSubtasks(task.subtasks || []);
+            refreshTaskData();
         }
     }, [task]);
+
+    const refreshTaskData = async () => {
+        if (!task?.id) return;
+        try {
+            const response = await fetch(`http://localhost:3001/api/tasks`);
+            const data = await response.json();
+            if (data.success) {
+                const updatedTask = data.tasks.find(t => t.id === task.id);
+                if (updatedTask) {
+                    setCurrentTask(updatedTask);
+                    setSubtasks(updatedTask.subtasks || []);
+                    setComments(updatedTask.comments || []);
+
+                    let tags = [];
+                    try {
+                        tags = typeof updatedTask.tags === 'string' ? JSON.parse(updatedTask.tags) : updatedTask.tags || [];
+                    } catch (e) { tags = []; }
+
+                    setFormData({
+                        title: updatedTask.title || '',
+                        description: updatedTask.description || '',
+                        priority: updatedTask.priority || 'medium',
+                        status: updatedTask.status || 'todo',
+                        tags,
+                        dueDate: updatedTask.dueDate ? new Date(updatedTask.dueDate).toISOString().split('T')[0] : '',
+                        agentIds: updatedTask.agents?.map(ta => ta.agentId) || []
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error refreshing task data:', error);
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -512,93 +533,108 @@ const TaskModal = ({ task, agents, onClose, onSave }) => {
                         </div>
                     </div>
 
-                    {/* Subtasks */}
-                    <div>
-                        <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            color: colors.textMain
-                        }}>
-                            Subtasks
-                        </label>
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                            <input
-                                type="text"
-                                value={newSubtask}
-                                onChange={(e) => setNewSubtask(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())}
-                                placeholder="Add subtask..."
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 12px',
-                                    backgroundColor: 'rgba(255,255,255,0.05)',
-                                    border: `1px solid ${colors.border}`,
-                                    borderRadius: '8px',
-                                    color: colors.textMain,
-                                    fontSize: '13px',
-                                    outline: 'none'
-                                }}
+                    {/* Subtasks / Discussion */}
+                    {task?.id ? (
+                        <>
+                            <TaskSubtasks
+                                taskId={task.id}
+                                subtasks={subtasks}
+                                onUpdate={refreshTaskData}
                             />
-                            <button
-                                type="button"
-                                onClick={handleAddSubtask}
-                                style={{
-                                    padding: '10px 16px',
-                                    backgroundColor: 'rgba(255,255,255,0.1)',
-                                    border: `1px solid ${colors.border}`,
-                                    borderRadius: '8px',
-                                    color: colors.textMain,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <Plus size={16} />
-                            </button>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {subtasks.map((subtask, idx) => (
-                                <div
-                                    key={idx}
+                            <TaskComments
+                                taskId={task.id}
+                                comments={comments}
+                                onUpdate={refreshTaskData}
+                            />
+                        </>
+                    ) : (
+                        <div>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                color: colors.textMain
+                            }}>
+                                Initial Subtasks
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                <input
+                                    type="text"
+                                    value={newSubtask}
+                                    onChange={(e) => setNewSubtask(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())}
+                                    placeholder="Add subtask..."
                                     style={{
+                                        flex: 1,
                                         padding: '10px 12px',
                                         backgroundColor: 'rgba(255,255,255,0.05)',
                                         border: `1px solid ${colors.border}`,
                                         borderRadius: '8px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '10px'
+                                        color: colors.textMain,
+                                        fontSize: '13px',
+                                        outline: 'none'
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleAddSubtask}
+                                    style={{
+                                        padding: '10px 16px',
+                                        backgroundColor: 'rgba(255,255,255,0.1)',
+                                        border: `1px solid ${colors.border}`,
+                                        borderRadius: '8px',
+                                        color: colors.textMain,
+                                        cursor: 'pointer'
                                     }}
                                 >
+                                    <Plus size={16} />
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {subtasks.map((subtask, idx) => (
                                     <div
-                                        onClick={() => handleToggleSubtask(idx)}
+                                        key={idx}
                                         style={{
-                                            width: '18px',
-                                            height: '18px',
-                                            borderRadius: '4px',
-                                            border: `2px solid ${colors.primary}`,
-                                            backgroundColor: subtask.completed ? colors.primary : 'transparent',
+                                            padding: '10px 12px',
+                                            backgroundColor: 'rgba(255,255,255,0.05)',
+                                            border: `1px solid ${colors.border}`,
+                                            borderRadius: '8px',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            flexShrink: 0
+                                            gap: '10px'
                                         }}
                                     >
-                                        {subtask.completed && <Check size={12} color="#fff" />}
+                                        <div
+                                            onClick={() => handleToggleSubtask(idx)}
+                                            style={{
+                                                width: '18px',
+                                                height: '18px',
+                                                borderRadius: '4px',
+                                                border: `2px solid ${colors.primary}`,
+                                                backgroundColor: subtask.completed ? colors.primary : 'transparent',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                flexShrink: 0
+                                            }}
+                                        >
+                                            {subtask.completed && <Check size={12} color="#fff" />}
+                                        </div>
+                                        <span style={{
+                                            flex: 1,
+                                            fontSize: '13px',
+                                            color: subtask.completed ? colors.textMuted : colors.textMain,
+                                            textDecoration: subtask.completed ? 'line-through' : 'none'
+                                        }}>
+                                            {subtask.title}
+                                        </span>
                                     </div>
-                                    <span style={{
-                                        flex: 1,
-                                        fontSize: '13px',
-                                        color: subtask.completed ? colors.textMuted : colors.textMain,
-                                        textDecoration: subtask.completed ? 'line-through' : 'none'
-                                    }}>
-                                        {subtask.title}
-                                    </span>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Task Result (for Completed Tasks) */}
                     {task && (task.status === 'done' || task.status === 'completed') && task.result && (

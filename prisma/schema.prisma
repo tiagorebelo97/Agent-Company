@@ -42,6 +42,13 @@ model Project {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
+  // New logic fields
+  analysisResults String?  @default("{}") // JSON string with PM analysis
+  suggestedAgents String?  @default("[]") // JSON array of agent IDs suggested by PM
+  assignedAgents  String?  @default("[]") // JSON array of agent IDs currently on project
+  reports         String?  @default("[]") // JSON array of report objects
+  localPath       String?                // Local path to the repository
+  
   tasks        Task[]
 }
 

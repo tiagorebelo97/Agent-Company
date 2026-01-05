@@ -38,15 +38,18 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
         origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5175'],
-        methods: ['GET', 'POST'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
         credentials: true
     }
 });
-
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5175'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+}));
 app.use(express.json());
 app.use(sanitizeStrings); // XSS protection
 app.use(requestLogger); // Request logging
@@ -93,6 +96,67 @@ app.get('/api/projects', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * POST /api/projects
@@ -100,7 +164,7 @@ app.get('/api/projects', async (req, res) => {
  */
 app.post('/api/projects', async (req, res) => {
     try {
-        const { name, description, status, repoUrl, clientName, endDate } = req.body;
+        const { name, description, status, repoUrl, localPath, clientName, endDate } = req.body;
 
         if (!name) {
             return res.status(400).json({ success: false, error: 'Project name is required' });
@@ -112,6 +176,7 @@ app.post('/api/projects', async (req, res) => {
                 description,
                 status: status || 'active',
                 repoUrl,
+                localPath,
                 clientName,
                 endDate: endDate ? new Date(endDate) : null
             }
@@ -119,9 +184,112 @@ app.post('/api/projects', async (req, res) => {
 
         io.emit('project:created', project);
         logger.info(`Project created: ${project.id} - ${project.name}`);
+
+        // Automatically trigger analysis if repository info is provided
+        if (repoUrl || localPath) {
+            const pm = AgentRegistry.getAgent('pm');
+            if (pm) {
+                logger.info(`Auto-triggering analysis for new project: ${project.name}`);
+
+                // Create analysis task
+                const task = await prisma.task.create({
+                    data: {
+                        title: `Initial Analysis: ${project.name}`,
+                        description: `Automatically analyzing the new project at ${localPath || repoUrl}. Identifiy tech stack and suggest agent swarm.`,
+                        status: 'todo',
+                        priority: 'high',
+                        type: 'project_analysis',
+                        project: { connect: { id: project.id } },
+                        agents: {
+                            create: [
+                                { agent: { connect: { id: 'pm' } } }
+                            ]
+                        },
+                        createdBy: 'system',
+                        requirements: JSON.stringify({
+                            project_id: project.id,
+                            local_path: localPath,
+                            repo_url: repoUrl
+                        })
+                    }
+                });
+
+                // Trigger execution
+                const completeTask = await prisma.task.findUnique({
+                    where: { id: task.id },
+                    include: { agents: { include: { agent: true } }, subtasks: true, comments: true }
+                });
+
+                pm.executeTask(completeTask).catch(err => {
+                    logger.error(`Failed to auto-trigger analysis for project ${project.id}:`, err);
+                });
+            }
+        }
+
         res.json({ success: true, project });
     } catch (error) {
         logger.error('Error creating project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -156,6 +324,463 @@ app.get('/api/projects/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/projects/:id/files
+ * Recursive directory listing for the project
+ */
+app.get('/api/projects/:id/files', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.json({ success: true, files: [] });
+        }
+
+        // Fix: Resolve path correctly based on project root
+        // If it's relative, it should be relative to the server root (process.cwd())
+        const absolutePath = path.isAbsolute(project.localPath)
+            ? project.localPath
+            : path.resolve(process.cwd(), project.localPath);
+
+        const stats = await fs.promises.stat(absolutePath).catch(() => null);
+        if (!stats || !stats.isDirectory()) {
+            logger.warn(`Project path is invalid for project ${id}: ${absolutePath}`);
+            return res.json({ success: true, files: [] });
+        }
+
+        const listFiles = async (dir, baseDir) => {
+            const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+            const files = await Promise.all(entries.map(async (entry) => {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.relative(baseDir, fullPath);
+
+                if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.next' || entry.name === 'dist') {
+                    return null;
+                }
+
+                if (entry.isDirectory()) {
+                    return {
+                        name: entry.name,
+                        path: relativePath,
+                        type: 'directory',
+                        children: await listFiles(fullPath, baseDir)
+                    };
+                } else {
+                    return {
+                        name: entry.name,
+                        path: relativePath,
+                        type: 'file'
+                    };
+                }
+            }));
+            return files.filter(Boolean);
+        };
+
+        const fileTree = await listFiles(absolutePath, absolutePath);
+        res.json({ success: true, files: fileTree });
+    } catch (error) {
+        logger.error('Error listing project files:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * DELETE /api/projects/:id
+ * Delete a project
+ */
+app.delete('/api/projects/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Cascade delete is handled by Prisma relations (onDelete: Cascade)
+        // for TaskAgent, Subtask, Comment.
+        // We first need to delete Tasks associated with the project.
+        await prisma.task.deleteMany({
+            where: { projectId: id }
+        });
+
+        await prisma.project.delete({
+            where: { id }
+        });
+
+        logger.info(`Project deleted: ${id}`);
+        io.emit('project:deleted', id);
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error deleting project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/projects/:id/analyze
+ * Request Project Manager to analyze the repository
+ */
+app.post('/api/projects/:id/analyze', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project) {
+            return res.status(404).json({ success: false, error: 'Project not found' });
+        }
+
+        const pm = AgentRegistry.getAgent('pm');
+        if (!pm) {
+            return res.status(503).json({ success: false, error: 'Project Manager agent not available' });
+        }
+
+        // Create a task for the PM to analyze the project
+        const task = await prisma.task.create({
+            data: {
+                title: `Analyze Project: ${project.name}`,
+                description: `Perform a deep analysis of the project repository at ${project.localPath || project.repoUrl}. Identify tech stack, architectural patterns, and suggest suitable agents for the swarm.`,
+                status: 'in_progress',
+                priority: 'high',
+                type: 'project_analysis',
+                project: { connect: { id: id } },
+                agents: {
+                    create: [
+                        { agent: { connect: { id: 'pm' } } }
+                    ]
+                },
+                createdBy: 'system',
+                requirements: JSON.stringify({
+                    project_id: id,
+                    local_path: project.localPath,
+                    repo_url: project.repoUrl
+                })
+            }
+        });
+
+        // Trigger execution immediately
+        const completeTask = await prisma.task.findUnique({
+            where: { id: task.id },
+            include: { agents: { include: { agent: true } }, subtasks: true, comments: true }
+        });
+
+        pm.executeTask(completeTask).catch(err => {
+            logger.error(`Failed to trigger analysis for project ${id}:`, err);
+        });
+
+        res.json({
+            success: true,
+            message: 'Project analysis initiated',
+            taskId: task.id
+        });
+    } catch (error) {
+        logger.error('Error initiating project analysis:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * PATCH /api/projects/:id
@@ -186,6 +811,67 @@ app.patch('/api/projects/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * DELETE /api/projects/:id
@@ -199,6 +885,67 @@ app.delete('/api/projects/:id', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         logger.error('Error deleting project:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -226,6 +973,67 @@ app.get('/api/agents', (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * GET /api/agents/:id
@@ -248,6 +1056,67 @@ app.get('/api/agents/:id', (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * GET /api/stats
@@ -263,6 +1132,67 @@ app.get('/api/stats', (req, res) => {
         });
     } catch (error) {
         logger.error('Error fetching stats:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -289,6 +1219,67 @@ app.get('/api/messages', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error fetching messages:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -340,6 +1331,67 @@ app.post('/api/chat', async (req, res) => {
 
     } catch (error) {
         logger.error('Error in chat:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -474,6 +1526,67 @@ app.post('/api/agents/:id/chat', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * GET /api/agents/:id/chat/history
@@ -521,6 +1634,67 @@ app.get('/api/agents/:id/chat/history', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * GET /api/health
@@ -537,6 +1711,67 @@ app.get('/api/health', async (req, res) => {
         });
     } catch (error) {
         logger.error('Health check failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -563,6 +1798,67 @@ app.get('/api/agents/health-report', (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting health report:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -596,6 +1892,67 @@ app.post('/api/agents/:id/restart', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error restarting agent:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -660,6 +2017,67 @@ app.get('/api/tasks', async (req, res) => {
         res.json({ success: true, tasks: normalizedTasks });
     } catch (error) {
         logger.error('Error fetching tasks:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -745,6 +2163,67 @@ app.post('/api/tasks', validateTaskPayload, async (req, res) => {
         res.json({ success: true, task: normalizedTask });
     } catch (error) {
         logger.error('Error creating task:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -838,6 +2317,67 @@ app.patch('/api/tasks/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * DELETE /api/tasks/:id
@@ -858,6 +2398,67 @@ app.delete('/api/tasks/:id', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         logger.error('Error deleting task:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -886,6 +2487,67 @@ app.post('/api/tasks/:id/subtasks', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * PATCH /api/tasks/:taskId/subtasks/:subtaskId
@@ -906,6 +2568,67 @@ app.patch('/api/tasks/:taskId/subtasks/:subtaskId', async (req, res) => {
         res.json({ success: true, subtask });
     } catch (error) {
         logger.error('Error updating subtask:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -933,6 +2656,67 @@ app.post('/api/tasks/:id/comments', async (req, res) => {
         res.json({ success: true, comment });
     } catch (error) {
         logger.error('Error creating comment:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -1077,6 +2861,67 @@ AgentRegistry.on('agent:chat:message', async (data) => {
         });
     } catch (e) {
         logger.error('Failed to persist proactive agent message:', e);
+    }
+});
+/**
+ * GET /api/projects/:id/files/:path
+ * Read file content
+ */
+app.get('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        const content = fs.readFileSync(absoluteFilePath, 'utf-8');
+        res.json({ success: true, content, path: filePath });
+    } catch (error) {
+        logger.error('Error reading file:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:id/files/:path
+ * Write file content
+ */
+app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
+    try {
+        const { id, path: filePath } = req.params;
+        const { content } = req.body;
+        const project = await prisma.project.findUnique({ where: { id } });
+
+        if (!project || !project.localPath) {
+            return res.status(404).json({ success: false, error: 'Project or local path not found' });
+        }
+
+        const absoluteProjectPath = path.resolve(process.cwd(), project.localPath);
+        const absoluteFilePath = path.resolve(absoluteProjectPath, filePath);
+
+        if (!absoluteFilePath.startsWith(absoluteProjectPath)) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+
+        fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+        logger.info(`File updated: ${absoluteFilePath}`);
+        res.json({ success: true, path: filePath });
+    } catch (error) {
+        logger.error('Error writing file:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

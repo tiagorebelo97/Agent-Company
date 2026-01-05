@@ -7,6 +7,7 @@ const ProjectCreateModal = ({ isOpen, onClose, onSave }) => {
         description: '',
         clientName: '',
         repoUrl: '',
+        localPath: '',
         status: 'active'
     });
     const [loading, setLoading] = useState(false);
@@ -167,6 +168,29 @@ const ProjectCreateModal = ({ isOpen, onClose, onSave }) => {
                                     value={formData.repoUrl}
                                     onChange={e => setFormData({ ...formData, repoUrl: e.target.value })}
                                     placeholder="https://github.com/..."
+                                    style={{
+                                        width: '100%',
+                                        backgroundColor: 'rgba(255,255,255,0.03)',
+                                        border: `1px solid ${colors.border}`,
+                                        borderRadius: '12px',
+                                        padding: '12px 12px 12px 40px',
+                                        color: colors.textMain,
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Local Path */}
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', color: colors.textMuted, marginBottom: '6px', fontWeight: 600 }}>LOCAL DIRECTORY PATH</label>
+                            <div style={{ position: 'relative' }}>
+                                <FileText size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: colors.textMuted }} />
+                                <input
+                                    value={formData.localPath}
+                                    onChange={e => setFormData({ ...formData, localPath: e.target.value })}
+                                    placeholder="e.g. C:\Projetos\MyRepo"
                                     style={{
                                         width: '100%',
                                         backgroundColor: 'rgba(255,255,255,0.03)',

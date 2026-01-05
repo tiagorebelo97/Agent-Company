@@ -117,7 +117,7 @@ class TaskMonitor {
             // Convert task to format expected by executeTask
             const taskPayload = {
                 id: task.id,
-                type: 'feature_implementation',
+                type: task.type || 'feature_implementation',
                 description: task.title,
                 requirements: {
                     title: task.title,
