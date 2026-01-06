@@ -70,7 +70,7 @@ class LLMManager:
                 from google import genai
                 # Initialize both Alpha (for exp models) and V1 (for stable models) clients
                 self.gemini_client_alpha = genai.Client(api_key=gemini_key, http_options={'api_version':'v1alpha'})
-                self.gemini_client_v1 = genai.Client(api_key=gemini_key, http_options={'api_version':'v1'})
+                self.gemini_client_v1 = genai.Client(api_key=gemini_key, http_options={'api_version':'v1beta'})
                 
                 # Set a primary for existence check
                 self.providers[LLMProvider.GEMINI] = self.gemini_client_v1

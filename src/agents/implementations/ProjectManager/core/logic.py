@@ -77,10 +77,14 @@ class ProjectManager(PythonBaseAgent):
         else:
             requirements = requirements_raw
             
-        local_path = requirements.get('local_path')
-        repo_url = requirements.get('repo_url')
+        local_path = requirements.get('local_path') or requirements.get('localPath')
+        repo_url = requirements.get('repo_url') or requirements.get('repoUrl')
 
         path_to_scan = local_path
+        
+        # Ensure path_to_scan is absolute if it exists
+        if path_to_scan and not os.path.is_absolute(path_to_scan):
+            path_to_scan = os.path.abspath(path_to_scan)
         
         # If no local path, try to use repoUrl and clone it
         if not path_to_scan and repo_url:
@@ -91,25 +95,31 @@ class ProjectManager(PythonBaseAgent):
                 repo_name = repo_url.split('/')[-1].replace('.git', '')
                 target_path = os.path.join(clones_dir, repo_name)
                 
-                # Check if already cloned
-                self.call_mcp_tool(None, "run_command", {"command": f"mkdir -p {clones_dir}"})
+                # Ensure clones directory exists (Windows-safe way via Python directly if possible, or tool)
+                if not os.path.exists(clones_dir):
+                    os.makedirs(clones_dir, exist_ok=True)
                 
+                # Attempt clone
                 clone_res = self.call_mcp_tool("git", "git_clone", {
                     "url": repo_url,
                     "path": target_path
                 })
                 
-                path_to_scan = target_path
-                # Update project with the new local path
-                self.call_mcp_tool(None, "project_update", {
-                    "projectId": project_id,
-                    "localPath": path_to_scan
-                })
-                self.log(f"✅ PM: Repository cloned to {path_to_scan}")
+                if clone_res and clone_res.get('success'):
+                    path_to_scan = target_path
+                    # ONLY update project with the new local path IF clone succeeded
+                    self.call_mcp_tool(None, "project_update", {
+                        "projectId": project_id,
+                        "localPath": path_to_scan
+                    })
+                    self.log(f"✅ PM: Repository cloned successfully to {path_to_scan}")
+                else:
+                    error_msg = clone_res.get('error', 'Unknown git error')
+                    self.log(f"⚠️ PM: Clone failed: {error_msg}")
+                    path_to_scan = None # Prevent analysis of non-existent path
             except Exception as e:
                 self.log(f"⚠️ PM: Failed to clone repository: {str(e)}")
-                # Continue with repo_url as fallback, though tools might fail
-                path_to_scan = repo_url
+                path_to_scan = None
 
         if not path_to_scan:
             return {'success': False, 'error': 'No local path or repository URL provided'}

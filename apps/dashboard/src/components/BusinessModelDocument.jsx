@@ -68,10 +68,22 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
 
     if (!canvasData) {
         return (
-            <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
-                <FileText size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
-                <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Sem Modelo de Negócio</h3>
-                <p style={{ margin: 0, fontSize: '14px' }}>Selecione um projeto com Business Model Canvas</p>
+            <div style={{ padding: '80px 40px', textAlign: 'center', backgroundColor: colors.bg }}>
+                <div style={{
+                    width: '80px', height: '80px', backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 24px'
+                }}>
+                    <FileText size={40} style={{ color: colors.primary }} />
+                </div>
+                <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'white', marginBottom: '12px' }}>Sem Modelo de Negócio</h2>
+                <p style={{ fontSize: '16px', color: colors.textMuted, maxWidth: '500px', margin: '0 auto 32px', lineHeight: 1.6 }}>
+                    Ainda não foi gerado um Business Model Canvas para o projeto **{activeProject?.name || 'selecionado'}**.
+                    <br /><br />
+                    Pode solicitar a geração automática no **Chat de Comando**:
+                    <br />
+                    *"Gera um Business Model Canvas para este projeto"*
+                </p>
             </div>
         );
     }
@@ -263,7 +275,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                 color: 'white',
                                 letterSpacing: '-0.03em'
                             }}>
-                                {activeProject?.name || 'Mason'}
+                                {activeProject?.name || 'Projeto'}
                             </h1>
                             <p style={{
                                 margin: 0,
@@ -271,7 +283,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                 color: colors.textMuted,
                                 lineHeight: 1.6
                             }}>
-                                {canvasData.metadata?.domain || 'Construction Technology Platform'}
+                                {canvasData.metadata?.domain || 'Plataforma de Soluções Inteligentes'}
                             </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px' }} className="no-print">
@@ -334,7 +346,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                         <div style={{ padding: '12px', backgroundColor: colors.card, borderRadius: '8px' }}>
                             <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '4px' }}>Gerado por</div>
                             <div style={{ fontSize: '14px', fontWeight: 600, color: 'white' }}>
-                                {canvasData.metadata?.generated_by || 'Strategy Agent + Gemini'}
+                                {canvasData.metadata?.generated_by}
                             </div>
                         </div>
                         <div style={{ padding: '12px', backgroundColor: colors.card, borderRadius: '8px' }}>
@@ -352,14 +364,14 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                     </div>
 
                     {/* Agent Attribution */}
-                    {canvasData.metadata?.agents_used && (
+                    {canvasData.metadata?.agents_used && Array.isArray(canvasData.metadata.agents_used) && (
                         <div style={{ marginTop: '24px', padding: '20px', backgroundColor: 'rgba(124, 58, 237, 0.05)', border: `1px solid rgba(124, 58, 237, 0.2)`, borderRadius: '12px' }}>
                             <div style={{ fontSize: '14px', fontWeight: 700, color: colors.secondary, marginBottom: '12px' }}>
                                 🤝 Colaboração Multi-Agent
                             </div>
                             {canvasData.metadata.agents_used.map((agent, i) => (
                                 <div key={i} style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px' }}>
-                                    <strong style={{ color: 'white' }}>{agent.agent}:</strong> {agent.contribution}
+                                    <strong style={{ color: 'white' }}>{agent.agent || agent.name}:</strong> {agent.contribution || agent.role}
                                 </div>
                             ))}
                         </div>
@@ -377,12 +389,28 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                         lineHeight: '1.8',
                         color: 'rgba(255,255,255,0.9)'
                     }}>
-                        <p style={{ margin: '0 0 16px 0' }}>
-                            O <strong>{activeProject?.name || 'Mason'}</strong> é uma plataforma SaaS inovadora que revoluciona a gestão de orçamentos na construção civil através de inteligência artificial e automação avançada.
-                        </p>
-                        <p style={{ margin: 0 }}>
-                            Este documento apresenta o Business Model Canvas completo, detalhando os 9 blocos fundamentais do modelo de negócio e incluindo projeções financeiras detalhadas para os próximos 3 anos.
-                        </p>
+                        {canvasData.executive_summary ? (
+                            <>
+                                {typeof canvasData.executive_summary === 'string' ? (
+                                    <p style={{ margin: 0 }}>{canvasData.executive_summary}</p>
+                                ) : (
+                                    canvasData.executive_summary.paragraphs && canvasData.executive_summary.paragraphs.map((p, i) => (
+                                        <p key={i} style={{ margin: i === canvasData.executive_summary.paragraphs.length - 1 ? 0 : '0 0 16px 0' }}>
+                                            {p}
+                                        </p>
+                                    ))
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <p style={{ margin: '0 0 16px 0' }}>
+                                    O <strong>{activeProject?.name || 'Projeto'}</strong> é uma solução estratégica inovadora potenciada por inteligência artificial para otimização de workflow e inteligência de negócio.
+                                </p>
+                                <p style={{ margin: 0 }}>
+                                    Este documento apresenta o Business Model Canvas completo, detalhando os 9 blocos fundamentais do modelo de negócio e incluindo projeções financeiras detalhadas para os próximos 3 anos.
+                                </p>
+                            </>
+                        )}
                     </div>
                 </Section>
 
@@ -415,15 +443,27 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                         <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
                             Tabela de Preços SaaS
                         </h3>
-                        <Table
-                            headers={['Plano', 'Preço/Mês', 'Utilizadores', 'Projetos', 'Features Principais']}
-                            rows={[
-                                ['FREE', '€0', '1', '3', 'Features básicas, 5GB storage'],
-                                ['STARTER', '€29', 'Ilimitado', '10', 'Categorização automática, 50GB'],
-                                ['PRO', '€79', 'Ilimitado', 'Ilimitado', 'IA avançada, API, 500GB'],
-                                ['ENTERPRISE', '€149', 'Ilimitado', 'Ilimitado', 'SSO, SLA 99.9%, suporte 24/7']
-                            ]}
-                        />
+                        {canvasData.revenue_streams?.pricing_table && canvasData.revenue_streams.pricing_table.headers ? (
+                            <Table
+                                headers={canvasData.revenue_streams.pricing_table.headers}
+                                rows={canvasData.revenue_streams.pricing_table.rows}
+                            />
+                        ) : canvasData.pricing_table ? (
+                            <Table
+                                headers={['Plano', 'Preço', 'Funcionalidades']}
+                                rows={canvasData.pricing_table.map(p => [p.tier || p.plan, p.price, p.features])}
+                            />
+                        ) : (
+                            <Table
+                                headers={['Plano', 'Preço/Mês', 'Utilizadores', 'Projetos', 'Features Principais']}
+                                rows={[
+                                    ['FREE', '€0', '1', '3', 'Features básicas, 5GB storage'],
+                                    ['STARTER', '€29', 'Ilimitado', '10', 'Categorização automática, 50GB'],
+                                    ['PRO', '€79', 'Ilimitado', 'Ilimitado', 'IA avançada, API, 500GB'],
+                                    ['ENTERPRISE', '€149', 'Ilimitado', 'Ilimitado', 'SSO, SLA 99.9%, suporte 24/7']
+                                ]}
+                            />
+                        )}
                     </div>
                 </Section>
 
@@ -584,17 +624,29 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                         <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
                             Breakdown de Custos Anuais
                         </h3>
-                        <Table
-                            headers={['Categoria', 'Percentagem', 'Valor Anual (estimado)', 'Descrição']}
-                            rows={[
-                                ['Desenvolvimento', '40%', '€240k', 'Salários equipa técnica + ferramentas'],
-                                ['Vendas & Marketing', '25%', '€150k', 'Equipa comercial + publicidade'],
-                                ['Infraestrutura', '15%', '€90k', 'AWS + ferramentas cloud'],
-                                ['Customer Success', '10%', '€60k', 'Suporte + onboarding'],
-                                ['Operações', '5%', '€30k', 'Contabilidade + legal + escritório'],
-                                ['I&D', '5%', '€30k', 'Investigação + inovação']
-                            ]}
-                        />
+                        {canvasData.cost_structure?.cost_breakdown && canvasData.cost_structure.cost_breakdown.headers ? (
+                            <Table
+                                headers={canvasData.cost_structure.cost_breakdown.headers}
+                                rows={canvasData.cost_structure.cost_breakdown.rows}
+                            />
+                        ) : canvasData.cost_breakdown ? (
+                            <Table
+                                headers={['Categoria', 'Percentagem', 'Detalhe']}
+                                rows={canvasData.cost_breakdown.map(c => [c.category, `${c.percentage}%`, c.detail])}
+                            />
+                        ) : (
+                            <Table
+                                headers={['Categoria', 'Percentagem', 'Valor Anual (estimado)', 'Descrição']}
+                                rows={[
+                                    ['Desenvolvimento', '40%', '€240k', 'Salários equipa técnica + ferramentas'],
+                                    ['Vendas & Marketing', '25%', '€150k', 'Equipa comercial + publicidade'],
+                                    ['Infraestrutura', '15%', '€90k', 'AWS + ferramentas cloud'],
+                                    ['Customer Success', '10%', '€60k', 'Suporte + onboarding'],
+                                    ['Operações', '5%', '€30k', 'Contabilidade + legal + escritório'],
+                                    ['I&D', '5%', '€30k', 'Investigação + inovação']
+                                ]}
+                            />
+                        )}
                     </div>
                 </Section>
 

@@ -161,7 +161,7 @@ const GitOperations = ({ projectId }) => {
 
             {message && (
                 <div style={{
-                    padding: '12px 16px',
+                    padding: '16px',
                     backgroundColor: message.type === 'success' ? 'rgba(16, 185, 129, 0.1)' :
                         message.type === 'error' ? 'rgba(220, 38, 38, 0.1)' :
                             'rgba(245, 158, 11, 0.1)',
@@ -170,17 +170,33 @@ const GitOperations = ({ projectId }) => {
                             colors.warning}`,
                     borderRadius: '12px',
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
+                    flexDirection: 'column',
+                    gap: '12px',
                     fontSize: '13px',
                     color: message.type === 'success' ? colors.success :
                         message.type === 'error' ? colors.error :
                             colors.warning
                 }}>
-                    {message.type === 'success' ? <CheckCircle size={16} /> :
-                        message.type === 'error' ? <XCircle size={16} /> :
-                            <AlertCircle size={16} />}
-                    <span>{message.text}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {message.type === 'success' ? <CheckCircle size={16} /> :
+                            message.type === 'error' ? <XCircle size={16} /> :
+                                <AlertCircle size={16} />}
+                        <span style={{ fontWeight: 700 }}>{message.text}</span>
+                    </div>
+
+                    {message.text.includes('directory not found') && (
+                        <div style={{
+                            marginTop: '4px', padding: '12px', backgroundColor: 'rgba(255,255,255,0.03)',
+                            borderRadius: '8px', color: '#e5e7eb', lineHeight: 1.5
+                        }}>
+                            <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: 700, opacity: 0.8 }}>O QUE FAZER?</p>
+                            <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                                <li>Verifique se o projeto foi clonado na pasta `projects_cache`.</li>
+                                <li>Se este é o repositório principal, peça ao chat para "corrigir o caminho do projeto Agent Company".</li>
+                                <li>Tente realizar um **Pull** para forçar a inicialização se o repositório for remoto.</li>
+                            </ul>
+                        </div>
+                    )}
                 </div>
             )}
 

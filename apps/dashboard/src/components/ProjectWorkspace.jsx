@@ -34,6 +34,7 @@ import AgentAssignment from './AgentAssignment';
 import PastMeetingsList from './PastMeetingsList';
 import BusinessModelDocument from './BusinessModelDocument';
 import AIAnalysisDocument from './AIAnalysisDocument';
+import CapabilitiesGuide from './CapabilitiesGuide';
 
 const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack, refreshTasks, refreshProjects, onGenerateBusinessModel }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -109,6 +110,7 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
 
     const navigationItems = [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'guide', label: 'Guia AI', icon: Lightbulb },
         { id: 'explorer', label: 'File Explorer', icon: FolderTree },
         { id: 'git', label: 'Git Operations', icon: GitBranch },
         { id: 'analysis', label: 'AI Analysis', icon: Cpu },
@@ -478,6 +480,12 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                     {view === 'activity' && (
                         <div style={{ height: '100%' }}>
                             <ActivityFeed socket={socket} events={events} />
+                        </div>
+                    )}
+
+                    {view === 'guide' && (
+                        <div style={{ height: '100%', overflowY: 'auto' }}>
+                            <CapabilitiesGuide />
                         </div>
                     )}
                 </div>

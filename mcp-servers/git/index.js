@@ -92,7 +92,12 @@ class GitMCPServer {
                 return await git.init();
             case 'git_clone':
                 const targetPath = join(this.basePath, args.path);
-                return await simpleGit().clone(args.url, targetPath);
+                try {
+                    const result = await simpleGit().clone(args.url, targetPath);
+                    return { success: true, result };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
             default:
                 throw new Error(`Unknown tool: ${toolName}`);
         }

@@ -144,46 +144,8 @@ app.post('/api/projects', async (req, res) => {
         io.emit('project:created', project);
         logger.info(`Project created: ${project.id} - ${project.name}`);
 
-        // Automatically trigger analysis if repository info is provided
-        if (repoUrl || localPath) {
-            const pm = AgentRegistry.getAgent('pm');
-            if (pm) {
-                logger.info(`Auto-triggering analysis for new project: ${project.name}`);
-
-                // Create analysis task
-                const task = await prisma.task.create({
-                    data: {
-                        title: `Initial Analysis: ${project.name}`,
-                        description: `Automatically analyzing the new project at ${localPath || repoUrl}. Identifiy tech stack and suggest agent swarm.`,
-                        status: 'todo',
-                        priority: 'high',
-                        type: 'project_analysis',
-                        project: { connect: { id: project.id } },
-                        agents: {
-                            create: [
-                                { agent: { connect: { id: 'pm' } } }
-                            ]
-                        },
-                        createdBy: 'system',
-                        requirements: JSON.stringify({
-                            project_id: project.id,
-                            local_path: localPath,
-                            repo_url: repoUrl
-                        })
-                    }
-                });
-
-                // Trigger execution
-                const completeTask = await prisma.task.findUnique({
-                    where: { id: task.id },
-                    include: { agents: { include: { agent: true } }, subtasks: true, comments: true }
-                });
-
-                pm.executeTask(completeTask).catch(err => {
-                    logger.error(`Failed to auto-trigger analysis for project ${project.id}:`, err);
-                });
-            }
-        }
+        // Analysis is now triggered manually via chat to ensure user control
+        logger.info(`Project created: ${project.id} - ${project.name}`);
 
         res.json({ success: true, project });
     } catch (error) {
@@ -793,7 +755,17 @@ app.get('/api/projects/:id/git/status', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Project or local path not found' });
         }
 
-        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const absolutePath = path.isAbsolute(project.localPath)
+            ? project.localPath
+            : path.resolve(process.cwd(), project.localPath);
+
+        if (!fs.existsSync(absolutePath)) {
+            return res.status(400).json({
+                success: false,
+                error: `Git directory not found: ${absolutePath}. Check if project was cloned correctly.`
+            });
+        }
+
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
 
@@ -818,7 +790,17 @@ app.post('/api/projects/:id/git/pull', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Project or local path not found' });
         }
 
-        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const absolutePath = path.isAbsolute(project.localPath)
+            ? project.localPath
+            : path.resolve(process.cwd(), project.localPath);
+
+        if (!fs.existsSync(absolutePath)) {
+            return res.status(400).json({
+                success: false,
+                error: `Git directory not found: ${absolutePath}. Cannot pull changes.`
+            });
+        }
+
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
 
@@ -848,7 +830,17 @@ app.post('/api/projects/:id/git/push', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Project or local path not found' });
         }
 
-        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const absolutePath = path.isAbsolute(project.localPath)
+            ? project.localPath
+            : path.resolve(process.cwd(), project.localPath);
+
+        if (!fs.existsSync(absolutePath)) {
+            return res.status(400).json({
+                success: false,
+                error: `Git directory not found: ${absolutePath}. Cannot push changes.`
+            });
+        }
+
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
 
@@ -883,7 +875,17 @@ app.post('/api/projects/:id/git/commit', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Commit message is required' });
         }
 
-        const absolutePath = path.resolve(process.cwd(), project.localPath);
+        const absolutePath = path.isAbsolute(project.localPath)
+            ? project.localPath
+            : path.resolve(process.cwd(), project.localPath);
+
+        if (!fs.existsSync(absolutePath)) {
+            return res.status(400).json({
+                success: false,
+                error: `Git directory not found: ${absolutePath}. Cannot commit changes.`
+            });
+        }
+
         const { simpleGit } = await import('simple-git');
         const git = simpleGit(absolutePath);
 

@@ -126,35 +126,23 @@ const AIAnalysisDocument = ({ projects = [], activeProjectId, onRunAnalysis }) =
                     borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     margin: '0 auto 24px'
                 }}>
-                    <Zap size={40} style={{ color: colors.primary }} />
+                    <Brain size={40} style={{ color: colors.primary }} />
                 </div>
-                <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'white', marginBottom: '12px' }}>Análise Pendente</h2>
+                <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'white', marginBottom: '12px' }}>Consultoria Multi-Agente</h2>
                 <p style={{ fontSize: '16px', color: colors.textMuted, maxWidth: '500px', margin: '0 auto 32px', lineHeight: 1.6 }}>
-                    Realize uma auditoria completa do projeto **{activeProject.name}** utilizando o conhecimento combinado de Agentes Especialistas e Gemini AI.
+                    A análise de IA agora é realizada de forma colaborativa através do **Chat de Comando**.
+                    <br /><br />
+                    Para analisar o projeto **{activeProject.name}**, peça ao Gemini no chat:
+                    <br />
+                    *"Faz uma análise de IA completa para este projeto"*
                 </p>
-                <button
-                    onClick={handleRunAnalysis}
-                    style={{
-                        padding: '16px 32px',
-                        backgroundColor: colors.primary,
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '12px',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        margin: '0 auto',
-                        transition: 'transform 0.2s'
-                    }}
-                    onMouseEnter={e => e.target.style.transform = 'scale(1.05)'}
-                    onMouseLeave={e => e.target.style.transform = 'scale(1)'}
-                >
-                    <Zap size={20} />
-                    Iniciar Análise Completa
-                </button>
+                <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 24px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', border: `1px solid ${colors.border}`,
+                    color: colors.textMuted, fontSize: '14px'
+                }}>
+                    <AlertTriangle size={16} /> Disparos diretos via App desativados por agora
+                </div>
             </div>
         );
     }
@@ -231,16 +219,12 @@ const AIAnalysisDocument = ({ projects = [], activeProjectId, onRunAnalysis }) =
                             <h1 style={{ margin: '0 0 12px 0', fontSize: '48px', fontWeight: 900, color: 'white', letterSpacing: '-0.03em' }}>
                                 {activeProject?.name || 'Project'}
                             </h1>
-                            <p style={{ margin: 0, fontSize: '18px', color: colors.textMuted, lineHeight: 1.6 }}>Report of strategic health, architecture, security and UX.</p>
+                            <p style={{ margin: 0, fontSize: '18px', color: colors.textMuted, lineHeight: 1.6 }}>
+                                {analysisData.metadata.description || 'Relatório detalhado de saúde estratégica, arquitetura, segurança e UX.'}
+                            </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px' }} className="no-print">
-                            <button onClick={handleRunAnalysis} style={{
-                                padding: '12px 20px', backgroundColor: 'transparent', border: `1px solid ${colors.primary}`,
-                                borderRadius: '12px', color: colors.primary, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                                gap: '8px', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s'
-                            }}>
-                                <Zap size={18} /> Re-analisar
-                            </button>
+                            {/* Re-analisar button hidden to favor chat collaboration */}
                             <button onClick={handlePrint} style={{
                                 padding: '12px 20px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`,
                                 borderRadius: '12px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center',
@@ -322,10 +306,10 @@ const AIAnalysisDocument = ({ projects = [], activeProjectId, onRunAnalysis }) =
                 {/* Code Quality */}
                 <Section title="Qualidade de Código" icon={Code} color={colors.secondary}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                        <MetricCard label="TOTAL FILES" value={analysisData.code_quality.metrics.total_files} subtext="Tracked in project path" color={colors.secondary} icon={Code} />
-                        <MetricCard label="COMPLEXITY" value={analysisData.code_quality.metrics.complexity_index} subtext="Average per module" color={colors.secondary} />
-                        <MetricCard label="ESLINT COMPLIANCE" value={analysisData.code_quality.metrics.eslint_compliance} subtext="Coding standards strictly enforced" color={colors.accent} />
-                        <MetricCard label="DUPLICATION" value={analysisData.code_quality.metrics.duplication_ratio} subtext="Target: < 5%" color={colors.warning} />
+                        <MetricCard label="TOTAL FILES" value={analysisData.code_quality.metrics.total_files} subtext={analysisData.code_quality.metrics.files_subtext || "Arquivos monitorados"} color={colors.secondary} icon={Code} />
+                        <MetricCard label="COMPLEXITY" value={analysisData.code_quality.metrics.complexity_index} subtext={analysisData.code_quality.metrics.complexity_subtext || "Média por módulo"} color={colors.secondary} />
+                        <MetricCard label="ESLINT COMPLIANCE" value={analysisData.code_quality.metrics.eslint_compliance} subtext={analysisData.code_quality.metrics.compliance_subtext || "Conformidade com padrões"} color={colors.accent} />
+                        <MetricCard label="DUPLICATION" value={analysisData.code_quality.metrics.duplication_ratio} subtext={analysisData.code_quality.metrics.duplication_subtext || "Alvo: < 5%"} color={colors.warning} />
                     </div>
                     <div style={{ fontSize: '15px', color: colors.textMuted, lineHeight: 1.7, padding: '20px', backgroundColor: colors.card, borderRadius: '12px' }}>
                         <ul style={{ margin: 0, paddingLeft: '20px' }}>
@@ -445,7 +429,7 @@ const AIAnalysisDocument = ({ projects = [], activeProjectId, onRunAnalysis }) =
                         </div>
                         {/* More priorities could be added here */}
                         <div style={{ marginTop: '24px', padding: '20px', backgroundColor: colors.card, borderRadius: '12px', textAlign: 'center', fontSize: '14px', color: colors.textMuted }}>
-                            Gerado em {new Date(analysisData.metadata.analyzed_at).toLocaleDateString()} pelo Gemini AI Multitask Orchestrator.
+                            Gerado em {new Date(analysisData.metadata.analyzed_at).toLocaleDateString()} pelo {analysisData.metadata.orchestrator || 'Gemini AI Multitask Orchestrator'}.
                         </div>
                     </div>
                 </Section>
