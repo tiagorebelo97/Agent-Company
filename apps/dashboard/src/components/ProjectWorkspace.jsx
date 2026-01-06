@@ -31,14 +31,18 @@ import RecommendationsList from './RecommendationsList';
 import MeetingRoom from './MeetingRoom';
 import CreateMeetingModal from './CreateMeetingModal';
 import AgentAssignment from './AgentAssignment';
+import PastMeetingsList from './PastMeetingsList';
+import BusinessModelDocument from './BusinessModelDocument';
+import AIAnalysisDocument from './AIAnalysisDocument';
 
-const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack, refreshTasks, refreshProjects }) => {
+const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack, refreshTasks, refreshProjects, onGenerateBusinessModel }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [view, setView] = useState('overview'); // overview, explorer, analysis, tasks, activity, git, recommendations, meetings, agents
     const [selectedProjectId, setSelectedProjectId] = useState('all');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isCreateMeetingModalOpen, setIsCreateMeetingModalOpen] = useState(false);
     const [activeMeetingId, setActiveMeetingId] = useState(null);
+    const [meetings, setMeetings] = useState([]);
 
     const colors = {
         bg: '#000000',
@@ -86,11 +90,29 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
         }
     };
 
+    const handleRunAnalysis = async (projectId) => {
+        try {
+            const response = await fetch(`http://localhost:3001/api/projects/${projectId}/analyze`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (data.success) {
+                refreshProjects?.();
+            } else {
+                alert('Analysis failed: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Error running analysis:', error);
+            alert('Error running analysis. See console.');
+        }
+    };
+
     const navigationItems = [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
         { id: 'explorer', label: 'File Explorer', icon: FolderTree },
         { id: 'git', label: 'Git Operations', icon: GitBranch },
         { id: 'analysis', label: 'AI Analysis', icon: Cpu },
+        { id: 'business_model', label: 'Business Model', icon: BarChart3 },
         { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
         { id: 'agents', label: 'Team Assignment', icon: UserCog },
         { id: 'tasks', label: 'Kanban Board', icon: ListChecks },
@@ -100,13 +122,43 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
 
     return (
         <div style={{ display: 'flex', height: 'calc(100vh - 80px)', backgroundColor: colors.bg, gap: '0' }}>
+            {/* Sidebar Toggle Button */}
+            <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                style={{
+                    position: 'fixed',
+                    left: isSidebarOpen ? '260px' : '10px',
+                    top: '100px',
+                    zIndex: 1000,
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '12px',
+                    backgroundColor: colors.primary,
+                    border: 'none',
+                    color: 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                }}
+                title={isSidebarOpen ? 'Minimizar sidebar' : 'Expandir sidebar'}
+            >
+                {isSidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+            </button>
+
             {/* Left Workspace Sidebar */}
             <div style={{
-                width: '280px',
-                borderRight: `1px solid ${colors.border}`,
+                width: isSidebarOpen ? '280px' : '0px',
+                minWidth: isSidebarOpen ? '280px' : '0px',
+                borderRight: isSidebarOpen ? `1px solid ${colors.border}` : 'none',
                 display: 'flex',
                 flexDirection: 'column',
-                backgroundColor: '#050505'
+                backgroundColor: '#050505',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                overflow: 'hidden',
+                opacity: isSidebarOpen ? 1 : 0
             }}>
                 {/* Project Selector Header */}
                 <div style={{ padding: '24px', borderBottom: `1px solid ${colors.border}` }}>
@@ -230,7 +282,14 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
             </div>
 
             {/* Main Content Area */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                marginLeft: isSidebarOpen ? '0' : '0',
+                transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}>
                 {/* Hub Header */}
                 <div style={{
                     height: '80px',
@@ -291,12 +350,29 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                     )}
 
                     {view === 'analysis' && (
-                        <div style={{ height: '100%' }}>
-                            <ProjectAnalysisDashboard
-                                project={activeProject}
-                                agents={agents}
-                                isTaskInProgress={tasks.some(t => t.projectId === selectedProjectId && t.type === 'project_analysis' && (t.status === 'in_progress' || t.status === 'pending'))}
+                        <div style={{ height: '100%', overflowY: 'auto' }}>
+                            <AIAnalysisDocument
+                                projects={projects}
+                                activeProjectId={selectedProjectId}
+                                onRunAnalysis={handleRunAnalysis}
                             />
+                        </div>
+                    )}
+
+                    {view === 'business_model' && (
+                        <div style={{ height: '100%', overflowY: 'auto' }}>
+                            {activeProject ? (
+                                <BusinessModelDocument
+                                    projects={[activeProject]}
+                                    refreshProjects={refreshProjects}
+                                />
+                            ) : (
+                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
+                                    <BarChart3 size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>Select a Project</h3>
+                                    <p style={{ margin: 0, fontSize: '14px' }}>Business models are project-specific</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -337,8 +413,8 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                     {view === 'agents' && (
                         <div style={{ padding: '32px', height: '100%', overflowY: 'auto' }}>
                             {activeProject ? (
-                                <AgentAssignment 
-                                    projectId={activeProject.id} 
+                                <AgentAssignment
+                                    projectId={activeProject.id}
                                     agents={agents}
                                     onUpdate={() => {
                                         refreshProjects?.();
@@ -384,18 +460,17 @@ const ProjectWorkspace = ({ agents, tasks, projects = [], events, socket, onBack
                                 </button>
                             </div>
                             {activeMeetingId ? (
-                                <MeetingRoom 
-                                    meetingId={activeMeetingId} 
+                                <MeetingRoom
+                                    meetingId={activeMeetingId}
                                     projectId={selectedProjectId === 'all' ? null : selectedProjectId}
                                     agents={agents}
                                     onClose={() => setActiveMeetingId(null)}
                                 />
                             ) : (
-                                <div style={{ padding: '60px', textAlign: 'center', color: colors.textMuted }}>
-                                    <Users size={48} style={{ marginBottom: '20px', opacity: 0.3 }} />
-                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 700 }}>No active meeting</h3>
-                                    <p style={{ margin: 0, fontSize: '14px' }}>Create a new meeting to collaborate with agents</p>
-                                </div>
+                                <PastMeetingsList
+                                    projectId={selectedProjectId}
+                                    onSelectMeeting={(id) => setActiveMeetingId(id)}
+                                />
                             )}
                         </div>
                     )}

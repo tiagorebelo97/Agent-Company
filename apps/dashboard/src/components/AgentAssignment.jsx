@@ -22,7 +22,7 @@ const AgentAssignment = ({ projectId, agents = [], onUpdate }) => {
             const data = await response.json();
             if (data.success) {
                 setProject(data.project);
-                
+
                 // Parse assigned agents
                 try {
                     const assigned = JSON.parse(data.project.assignedAgents || '[]');
@@ -30,7 +30,7 @@ const AgentAssignment = ({ projectId, agents = [], onUpdate }) => {
                 } catch (e) {
                     setAssignedAgents([]);
                 }
-                
+
                 // Parse suggested agents
                 try {
                     const suggested = JSON.parse(data.project.suggestedAgents || '[]');
@@ -74,7 +74,7 @@ const AgentAssignment = ({ projectId, agents = [], onUpdate }) => {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    assignedAgents: JSON.stringify(agentIds)
+                    assignedAgents: agentIds  // Send array directly, JSON.stringify will handle it
                 })
             });
             const data = await response.json();

@@ -1,12 +1,3 @@
-/**
- * Main Express Server
- * 
- * Provides:
- * - REST API for agents and tasks
- * - WebSocket server for real-time updates
- * - Agent initialization
- */
-
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -14,11 +5,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 
 import logger from './utils/logger.js';
 import AgentRegistry from './agents/core/AgentRegistry.js';
 import MCPManager from './agents/core/MCPManager.js';
 import BaseAgent from './agents/core/BaseAgent.js';
+import { AnalysisOrchestrator } from './agents/analysis/orchestrator.js';
 
 // Database & Messaging
 import prisma from './database/client.js';
@@ -28,6 +21,32 @@ import TaskMonitor from './agents/utils/TaskMonitor.js';
 import TaskHealthMonitor from './services/TaskHealthMonitor.js';
 import AgentHealthMonitor from './services/AgentHealthMonitor.js';
 import ProcessManager from './services/ProcessManager.js';
+
+// Multer configuration for file uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(process.cwd(), 'uploads/agent-knowledge');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /pdf|txt|md|doc|docx|png|jpg|jpeg|gif|mp4|mov|avi/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        if (extname) return cb(null, true);
+        cb(new Error('Invalid file type'));
+    }
+});
 import { validateTaskPayload, sanitizeStrings, requestLogger } from './middleware/validation.js';
 
 // Load environment variables
@@ -38,16 +57,18 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
         origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5175'],
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
         credentials: true
     }
 });
+const analysisOrchestrator = new AnalysisOrchestrator(io);
+app.set('io', io); // Make io available to routes via req.app.get('io')
 const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
     origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5175'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true
 }));
 app.use(express.json());
@@ -170,6 +191,30 @@ app.post('/api/projects', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+/**
+ * PATCH /api/projects/:id/business-model
+ * Update business model for a project
+ */
+app.patch('/api/projects/:id/business-model', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { businessModel } = req.body;
+
+        const project = await prisma.project.update({
+            where: { id },
+            data: {
+                businessModel: typeof businessModel === 'string' ? businessModel : JSON.stringify(businessModel)
+            }
+        });
+
+        io.emit('project:updated', project);
+        res.json({ success: true, project });
+    } catch (error) {
+        logger.error('Error updating business model:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 /**
  * GET /api/projects/:id/files/:path
  * Read file content
@@ -263,6 +308,7 @@ app.get('/api/projects/:id', async (req, res) => {
     }
 });
 
+
 /**
  * PATCH /api/projects/:id
  * Update project details (status, analysis results, assigned agents, etc.)
@@ -272,11 +318,30 @@ app.patch('/api/projects/:id', async (req, res) => {
         const { id } = req.params;
         const { status, analysisResults, suggestedAgents, assignedAgents, localPath, clientName, endDate } = req.body;
 
+        logger.info(`PATCH /api/projects/${id} - Request body:`, JSON.stringify(req.body));
+
+        // Fetch old project data BEFORE updating (needed for agent comparison)
+        const oldProject = await prisma.project.findUnique({
+            where: { id }
+        });
+
+        if (!oldProject) {
+            logger.error(`Project not found: ${id}`);
+            return res.status(404).json({ success: false, error: 'Project not found' });
+        }
+
         const updateData = {};
         if (status) updateData.status = status;
         if (analysisResults) updateData.analysisResults = analysisResults;
         if (suggestedAgents) updateData.suggestedAgents = suggestedAgents;
-        if (assignedAgents) updateData.assignedAgents = assignedAgents;
+
+        // Handle assignedAgents - convert array to JSON string for database
+        if (assignedAgents) {
+            updateData.assignedAgents = Array.isArray(assignedAgents)
+                ? JSON.stringify(assignedAgents)
+                : assignedAgents;
+        }
+
         if (localPath) updateData.localPath = localPath;
         if (clientName) updateData.clientName = clientName;
         if (endDate) updateData.endDate = new Date(endDate);
@@ -289,9 +354,72 @@ app.patch('/api/projects/:id', async (req, res) => {
         logger.info(`Project updated: ${project.id} - ${project.name}`);
         io.emit('project:updated', project);
 
+        // If agents were assigned, trigger them to analyze the project
+        if (assignedAgents) {
+            try {
+                // Handle both array and string formats
+                const newAgentIds = Array.isArray(assignedAgents)
+                    ? assignedAgents
+                    : JSON.parse(assignedAgents);
+                const previousAgentIds = JSON.parse(oldProject.assignedAgents || '[]');
+
+                // Find newly assigned agents
+                const addedAgents = newAgentIds.filter(id => !previousAgentIds.includes(id));
+
+                if (addedAgents.length > 0) {
+                    logger.info(`Triggering analysis for ${addedAgents.length} newly assigned agents`);
+
+                    // Trigger each agent to analyze the project
+                    for (const agentId of addedAgents) {
+                        const agent = AgentRegistry.getAgent(agentId);
+                        if (agent) {
+                            // Create analysis task for this agent
+                            const task = await prisma.task.create({
+                                data: {
+                                    title: `Analyze ${project.name} from ${agent.name} perspective`,
+                                    description: `Analyze the project and provide recommendations based on your expertise in ${agent.role}.`,
+                                    status: 'in_progress',
+                                    priority: 'high',
+                                    type: 'agent_analysis',
+                                    project: { connect: { id: project.id } },
+                                    agents: {
+                                        create: [{ agent: { connect: { id: agentId } } }]
+                                    },
+                                    createdBy: 'system',
+                                    requirements: JSON.stringify({
+                                        project_id: project.id,
+                                        local_path: project.localPath,
+                                        repo_url: project.repoUrl,
+                                        analysis_type: 'initial_assessment'
+                                    })
+                                }
+                            });
+
+                            // Emit events
+                            io.emit('task:created', task);
+                            io.emit('agent:status', { agentId, status: 'busy', taskId: task.id });
+
+                            // Trigger agent execution (non-blocking)
+                            agent.executeTask(task).then(result => {
+                                logger.info(`Agent ${agentId} completed analysis for project ${project.id}`);
+                                // Agent will create recommendations during execution
+                            }).catch(err => {
+                                logger.error(`Agent ${agentId} failed analysis:`, err);
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                logger.error('Error triggering agent analysis:', err);
+                logger.error('Error stack:', err.stack);
+                // Don't fail the whole request if agent triggering fails
+            }
+        }
+
         res.json({ success: true, project });
     } catch (error) {
         logger.error('Error updating project:', error);
+        logger.error('Error stack:', error.stack);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -632,73 +760,18 @@ app.put('/api/projects/:id/files/:path(*)', async (req, res) => {
 
 /**
  * POST /api/projects/:id/analyze
- * Request Project Manager to analyze the repository
+ * Request Multi-Agent AI (Gemini AI + Experts) to analyze the project
  */
 app.post('/api/projects/:id/analyze', async (req, res) => {
     try {
         const { id } = req.params;
-        const project = await prisma.project.findUnique({ where: { id } });
-
-        if (!project) {
-            return res.status(404).json({ success: false, error: 'Project not found' });
+        if (!id || id === 'all') {
+            return res.status(400).json({ success: false, error: 'A specific project ID is required' });
         }
-
-        const pm = AgentRegistry.getAgent('pm');
-        if (!pm) {
-            return res.status(503).json({ success: false, error: 'Project Manager agent not available' });
-        }
-
-        // Create a task for the PM to analyze the project
-        const task = await prisma.task.create({
-            data: {
-                title: `Analyze Project: ${project.name}`,
-                description: `Perform a deep analysis of the project repository at ${project.localPath || project.repoUrl}. Identify tech stack, architectural patterns, and suggest suitable agents for the swarm.`,
-                status: 'in_progress',
-                priority: 'high',
-                type: 'project_analysis',
-                project: { connect: { id: id } },
-                agents: {
-                    create: [
-                        { agent: { connect: { id: 'pm' } } }
-                    ]
-                },
-                createdBy: 'system',
-                requirements: JSON.stringify({
-                    project_id: id,
-                    local_path: project.localPath,
-                    repo_url: project.repoUrl
-                })
-            }
-        });
-
-        // Trigger execution immediately
-        const completeTask = await prisma.task.findUnique({
-            where: { id: task.id },
-            include: { agents: { include: { agent: true } }, subtasks: true, comments: true }
-        });
-
-        pm.executeTask(completeTask).catch(err => {
-            logger.error(`Failed to trigger analysis for project ${id}:`, err);
-        });
-
-        // Broadcast to Activity Feed and UI
-        io.emit('analysis:started', { projectId: id, taskId: task.id, projectName: project.name });
-        io.emit('task:created', completeTask);
-        io.emit('agent:status', { agentId: 'pm', status: 'busy', taskId: task.id });
-        io.emit('agent:message', {
-            from: 'Project Manager',
-            to: 'System',
-            message: `Starting comprehensive analysis for project "${project.name}"...`,
-            timestamp: new Date()
-        });
-
-        res.json({
-            success: true,
-            message: 'Project analysis initiated',
-            taskId: task.id
-        });
+        const analysis = await analysisOrchestrator.runAnalysis(id);
+        res.json({ success: true, analysis });
     } catch (error) {
-        logger.error('Error initiating project analysis:', error);
+        logger.error(`Error analyzing project ${req.params.id}:`, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -1180,6 +1253,28 @@ app.post('/api/recommendations/:id/implement', async (req, res) => {
     }
 });
 
+/**
+ * DELETE /api/recommendations/:id
+ * Delete a recommendation permanently
+ */
+app.delete('/api/recommendations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        await prisma.recommendation.delete({
+            where: { id }
+        });
+
+        logger.info(`Recommendation deleted: ${id}`);
+        io.emit('recommendation:deleted', { id });
+
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error deleting recommendation:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ============================================
 // Meetings API
 // ============================================
@@ -1367,11 +1462,11 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                         const agentResponse = await agent.handleChatMessage(content, transcript, null, meeting.projectId);
 
                         let responseContent = agentResponse.response || agentResponse.result || 'No response';
-                        
+
                         // Detect task commitment in agent response
                         const taskCommitmentPattern = /(?:I will|I'll|I'm going to|I plan to|Let me)\s+(.*?)(?:\.|$)/gi;
                         const matches = [...responseContent.matchAll(taskCommitmentPattern)];
-                        
+
                         if (matches.length > 0 && meeting.projectId) {
                             // Create tasks for agent commitments
                             for (const match of matches) {
@@ -1394,7 +1489,7 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                                         });
                                         linkedTasks.push(task.id);
                                         logger.info(`Task created from meeting commitment: ${task.id}`);
-                                        
+
                                         // Add task reference to response
                                         responseContent += `\n\n📋 *Task created: ${task.title}* (ID: ${task.id.substring(0, 8)})`;
                                     } catch (taskErr) {
@@ -1429,7 +1524,7 @@ app.post('/api/meetings/:id/messages', async (req, res) => {
                     existingLinkedTasks = [];
                 }
                 const allLinkedTasks = [...existingLinkedTasks, ...linkedTasks];
-                
+
                 await prisma.meeting.update({
                     where: { id },
                     data: {
@@ -1617,9 +1712,9 @@ app.post('/api/agents/:agentId/knowledge', async (req, res) => {
         const { title, description, type, content, metadata, skillTags } = req.body;
 
         if (!title || !type || !content) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Title, type, and content are required' 
+            return res.status(400).json({
+                success: false,
+                error: 'Title, type, and content are required'
             });
         }
 
@@ -1702,6 +1797,51 @@ app.delete('/api/agents/:agentId/knowledge/:knowledgeId', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         logger.error('Error deleting agent knowledge:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/agents/:agentId/learn
+ * Upload a file for the agent to learn from
+ */
+app.post('/api/agents/:agentId/learn', upload.single('file'), async (req, res) => {
+    try {
+        const { agentId } = req.params;
+        const { title, description, skillTags } = req.body;
+
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'No file uploaded' });
+        }
+
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        let contentType = 'document';
+        if (['.png', '.jpg', '.jpeg', '.gif'].includes(ext)) contentType = 'image';
+        else if (['.mp4', '.mov', '.avi'].includes(ext)) contentType = 'video';
+
+        const knowledge = await prisma.agentKnowledge.create({
+            data: {
+                agentId,
+                title: title || req.file.originalname,
+                description: description || '',
+                type: contentType,
+                content: req.file.path,
+                metadata: JSON.stringify({
+                    originalName: req.file.originalname,
+                    size: req.file.size,
+                    mimeType: req.file.mimetype,
+                    uploadedAt: new Date()
+                }),
+                skillTags: skillTags || '[]'
+            }
+        });
+
+        logger.info(`Knowledge file uploaded for agent ${agentId}: ${req.file.originalname}`);
+        io.emit('knowledge:created', { agentId, knowledge });
+
+        res.json({ success: true, knowledge, message: 'File uploaded successfully' });
+    } catch (error) {
+        logger.error('Error uploading knowledge file:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -3554,7 +3694,7 @@ async function initializeAgents() {
             logger.info(`Registering ${config.name}...`);
 
             let agent;
-            
+
             // Check if there's a specialized implementation
             if (specializedAgents[config.id]) {
                 logger.info(`Using specialized implementation for ${config.id}`);

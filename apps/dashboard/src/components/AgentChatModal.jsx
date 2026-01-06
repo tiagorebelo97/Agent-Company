@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Zap, HelpCircle, Activity } from 'lucide-react';
+import { X, Send, Zap, HelpCircle, Activity, BookOpen } from 'lucide-react';
+import AgentKnowledgeManager from './AgentKnowledgeManager';
 
 const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
     const [messages, setMessages] = useState([]);
@@ -8,6 +9,7 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
     const [isSending, setIsSending] = useState(false);
     const [interactiveState, setInteractiveState] = useState({}); // { msgId: { items: [] } }
     const [confirmedMessages, setConfirmedMessages] = useState(new Set());
+    const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
     const messagesEndRef = useRef(null);
 
     const colors = {
@@ -381,28 +383,58 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
                             </div>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: colors.textSecondary,
-                            cursor: 'pointer',
-                            padding: '8px',
-                            borderRadius: '8px',
-                            transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                            e.target.style.color = colors.textMain;
-                        }}
-                        onMouseLeave={(e) => {
-                            e.target.style.backgroundColor = 'transparent';
-                            e.target.style.color = colors.textSecondary;
-                        }}
-                    >
-                        <X size={24} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                            onClick={() => setIsKnowledgeOpen(true)}
+                            style={{
+                                background: 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${colors.border}`,
+                                color: colors.textSecondary,
+                                cursor: 'pointer',
+                                padding: '8px 12px',
+                                borderRadius: '12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                                e.currentTarget.style.color = colors.textMain;
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                                e.currentTarget.style.color = colors.textSecondary;
+                            }}
+                        >
+                            <BookOpen size={18} />
+                            Knowledge
+                        </button>
+                        <button
+                            onClick={onClose}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: colors.textSecondary,
+                                cursor: 'pointer',
+                                padding: '8px',
+                                borderRadius: '8px',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                                e.target.style.color = colors.textMain;
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.backgroundColor = 'transparent';
+                                e.target.style.color = colors.textSecondary;
+                            }}
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Quick Actions */}
@@ -641,7 +673,14 @@ const AgentChatModal = ({ agent, isOpen, onClose, socket }) => {
                 </div>
             </div>
 
-            {/* Typing Animation CSS */}
+            {/* Agent Knowledge Modal */}
+            {isKnowledgeOpen && (
+                <AgentKnowledgeManager
+                    agentId={agent.id}
+                    agentName={agent.name}
+                    onClose={() => setIsKnowledgeOpen(false)}
+                />
+            )}
             <style>{`
                 @keyframes typing {
                     0%, 60%, 100% {

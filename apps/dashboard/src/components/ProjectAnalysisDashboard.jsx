@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Zap, Code, Users, BarChart, CheckCircle, AlertTriangle, Terminal } from 'lucide-react';
+import AnalysisProgressIndicator from './AnalysisProgressIndicator';
 
 const ProjectAnalysisDashboard = ({ project, agents = [], isTaskInProgress = false }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -101,6 +102,9 @@ const ProjectAnalysisDashboard = ({ project, agents = [], isTaskInProgress = fal
                     )}
                 </button>
             </div>
+
+            {/* Analysis Progress Indicator */}
+            {project && <AnalysisProgressIndicator projectId={project.id} />}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }}>
                 {/* Insights Panel */}

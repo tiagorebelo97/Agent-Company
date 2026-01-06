@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Send, Download, CheckCircle, Video, MessageCircle, ListTodo } from 'lucide-react';
+import io from 'socket.io-client';
 
 const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
     const [meeting, setMeeting] = useState(null);
@@ -7,12 +8,59 @@ const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
     const [transcript, setTranscript] = useState([]);
     const [linkedTasks, setLinkedTasks] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [socket, setSocket] = useState(null);
 
+    // Initialize Socket.IO connection
+    useEffect(() => {
+        const newSocket = io('http://localhost:3001');
+        setSocket(newSocket);
+
+        return () => {
+            newSocket.disconnect();
+        };
+    }, []);
+
+    // Fetch meeting data
     useEffect(() => {
         if (meetingId) {
             fetchMeeting();
         }
     }, [meetingId]);
+
+    // Subscribe to real-time task events
+    useEffect(() => {
+        if (!socket || !meetingId) return;
+
+        const handleTaskCreated = (task) => {
+            // Check if this task is linked to our meeting
+            if (task.type === 'meeting_commitment' && meeting?.linkedTasks) {
+                try {
+                    const taskIds = JSON.parse(meeting.linkedTasks || '[]');
+                    if (taskIds.includes(task.id)) {
+                        setLinkedTasks(prev => [...prev, task]);
+                        // Refresh meeting to update linkedTasks
+                        fetchMeeting();
+                    }
+                } catch (e) {
+                    console.error('Error parsing linkedTasks:', e);
+                }
+            }
+        };
+
+        const handleTaskUpdated = (task) => {
+            setLinkedTasks(prev =>
+                prev.map(t => t.id === task.id ? task : t)
+            );
+        };
+
+        socket.on('task:created', handleTaskCreated);
+        socket.on('task:updated', handleTaskUpdated);
+
+        return () => {
+            socket.off('task:created', handleTaskCreated);
+            socket.off('task:updated', handleTaskUpdated);
+        };
+    }, [socket, meetingId, meeting]);
 
     const fetchMeeting = async () => {
         try {
@@ -249,11 +297,11 @@ const MeetingRoom = ({ meetingId, projectId, agents = [], onClose }) => {
                                 <span style={{
                                     padding: '2px 8px',
                                     backgroundColor: task.status === 'done' ? colors.success + '30' :
-                                                     task.status === 'in_progress' ? colors.primary + '30' : 
-                                                     'rgba(255,255,255,0.1)',
+                                        task.status === 'in_progress' ? colors.primary + '30' :
+                                            'rgba(255,255,255,0.1)',
                                     color: task.status === 'done' ? colors.success :
-                                           task.status === 'in_progress' ? colors.primary :
-                                           colors.textMuted,
+                                        task.status === 'in_progress' ? colors.primary :
+                                            colors.textMuted,
                                     borderRadius: '6px',
                                     fontSize: '10px',
                                     fontWeight: 700

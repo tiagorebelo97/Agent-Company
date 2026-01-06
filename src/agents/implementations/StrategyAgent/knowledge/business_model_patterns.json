@@ -1,0 +1,339 @@
+{
+    "source": "Business Model Generation by Alexander Osterwalder & Yves Pigneur",
+    "methodology": "Business Model Canvas",
+    "building_blocks": {
+        "customer_segments": {
+            "description": "The different groups of people or organizations an enterprise aims to reach and serve",
+            "types": [
+                "Mass Market - One large group with similar needs",
+                "Niche Market - Specific, specialized customer segments",
+                "Segmented - Market segments with slightly different needs",
+                "Diversified - Two unrelated customer segments",
+                "Multi-Sided Platforms - Two or more interdependent segments"
+            ]
+        },
+        "value_propositions": {
+            "description": "The bundle of products and services that create value for a specific Customer Segment",
+            "elements": [
+                "Newness",
+                "Performance",
+                "Customization",
+                "Getting the Job Done",
+                "Design",
+                "Brand/Status",
+                "Price",
+                "Cost Reduction",
+                "Risk Reduction",
+                "Accessibility",
+                "Convenience/Usability"
+            ]
+        },
+        "channels": {
+            "description": "How a company communicates with and reaches its Customer Segments to deliver a Value Proposition",
+            "phases": [
+                "Awareness",
+                "Evaluation",
+                "Purchase",
+                "Delivery",
+                "After Sales"
+            ],
+            "types": [
+                "Direct",
+                "Indirect",
+                "Owned",
+                "Partner"
+            ]
+        },
+        "customer_relationships": {
+            "description": "The types of relationships a company establishes with specific Customer Segments",
+            "types": [
+                "Personal Assistance",
+                "Dedicated Personal Assistance",
+                "Self-Service",
+                "Automated Services",
+                "Communities",
+                "Co-creation"
+            ]
+        },
+        "revenue_streams": {
+            "description": "The cash a company generates from each Customer Segment",
+            "types": [
+                "Asset Sale",
+                "Usage Fee",
+                "Subscription Fees",
+                "Lending/Renting/Leasing",
+                "Licensing",
+                "Brokerage Fees",
+                "Advertising"
+            ],
+            "pricing": {
+                "fixed": [
+                    "List Price",
+                    "Product Feature Dependent",
+                    "Customer Segment",
+                    "Volume Dependent"
+                ],
+                "dynamic": [
+                    "Negotiation",
+                    "Yield Management",
+                    "Real-time Market",
+                    "Auctions"
+                ]
+            }
+        },
+        "key_resources": {
+            "description": "The most important assets required to make a business model work",
+            "types": [
+                "Physical",
+                "Intellectual",
+                "Human",
+                "Financial"
+            ]
+        },
+        "key_activities": {
+            "description": "The most important things a company must do to make its business model work",
+            "categories": [
+                "Production",
+                "Problem Solving",
+                "Platform/Network"
+            ]
+        },
+        "key_partnerships": {
+            "description": "The network of suppliers and partners that make the business model work",
+            "types": [
+                "Strategic alliances between non-competitors",
+                "Coopetition: strategic partnerships between competitors",
+                "Joint ventures to develop new businesses",
+                "Buyer-supplier relationships"
+            ],
+            "motivations": [
+                "Optimization and economy of scale",
+                "Reduction of risk and uncertainty",
+                "Acquisition of particular resources and activities"
+            ]
+        },
+        "cost_structure": {
+            "description": "All costs incurred to operate a business model",
+            "characteristics": [
+                "Cost-driven",
+                "Value-driven"
+            ],
+            "types": [
+                "Fixed Costs",
+                "Variable Costs",
+                "Economies of Scale",
+                "Economies of Scope"
+            ]
+        }
+    },
+    "patterns": [
+        {
+            "name": "Unbundled Business Models",
+            "concept": "There are three fundamentally different types of businesses: Customer relationship, Product innovation, Infrastructure. They may co-exist but should be 'unbundled' for optimal results.",
+            "examples": [
+                "Private Banking",
+                "Mobile Telecom Operators"
+            ],
+            "when_to_use": "When a company is trying to do all three and experiencing conflicts"
+        },
+        {
+            "name": "The Long Tail",
+            "concept": "Selling less of more: offering many niche products, each selling relatively infrequently. Aggregate sales of niche items can match blockbusters.",
+            "requirements": [
+                "Low inventory costs",
+                "Strong platforms",
+                "Content/products must be discoverable"
+            ],
+            "examples": [
+                "Amazon",
+                "Netflix",
+                "eBay",
+                "YouTube",
+                "LEGO Factory"
+            ]
+        },
+        {
+            "name": "Multi-Sided Platforms",
+            "concept": "Bringing together two or more distinct but interdependent groups of customers. Value only when both sides participate.",
+            "key_mechanics": [
+                "Subsidized side",
+                "Network effects",
+                "Value increases with users"
+            ],
+            "examples": [
+                "Google",
+                "Apple App Store",
+                "Facebook",
+                "Visa",
+                "Nintendo"
+            ]
+        },
+        {
+            "name": "Free as a Business Model",
+            "sub_patterns": [
+                {
+                    "name": "Freemium",
+                    "description": "Basic offering is free; premium version is paid",
+                    "examples": [
+                        "Spotify",
+                        "Skype",
+                        "Flickr",
+                        "Red Hat"
+                    ]
+                },
+                {
+                    "name": "Advertising-based",
+                    "description": "Free to users, paid by advertisers",
+                    "examples": [
+                        "Google",
+                        "Metro Newspaper",
+                        "Facebook"
+                    ]
+                },
+                {
+                    "name": "Bait and Hook",
+                    "description": "Free or cheap initial offering, recurring revenue from follow-on",
+                    "examples": [
+                        "Razors and blades",
+                        "Printers and ink",
+                        "Mobile contracts"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Open Business Models",
+            "concept": "Creating and capturing value by systematically collaborating with outside partners",
+            "types": [
+                "Outside-In: Exploiting external ideas within the company",
+                "Inside-Out: Providing unused internal ideas to outside partners"
+            ],
+            "examples": [
+                "Procter & Gamble Connect+Develop",
+                "Innocentive",
+                "GlaxoSmithKline Patent Pool"
+            ]
+        }
+    ],
+    "design_techniques": {
+        "customer_insights": {
+            "description": "Seeing the business model through the customer's eyes",
+            "approaches": [
+                "Empathy Mapping",
+                "Customer Observation",
+                "Co-creation with customers"
+            ]
+        },
+        "ideation": {
+            "description": "Generating numerous business model ideas and isolating the best",
+            "approaches": [
+                "What if questions",
+                "Exploring from each building block (epicenters)",
+                "Combining patterns"
+            ],
+            "epicenters": [
+                "Resource-driven",
+                "Offer-driven",
+                "Customer-driven",
+                "Finance-driven",
+                "Multi-epicenter"
+            ]
+        },
+        "visual_thinking": {
+            "description": "Using visual tools to understand, discuss, and develop business models",
+            "tools": [
+                "Business Model Canvas",
+                "Post-its",
+                "Sketches",
+                "Diagrams"
+            ]
+        },
+        "prototyping": {
+            "description": "Creating rough, quick business model sketches to explore possibilities",
+            "levels": [
+                "Napkin sketch - rough concept",
+                "Elaborated canvas - detailed exploration",
+                "Business case - numbers and projections",
+                "Field test - real market testing"
+            ]
+        },
+        "storytelling": {
+            "description": "Communicating the business model through compelling narrative",
+            "purpose": "Pitch new ideas, engage stakeholders, gain buy-in"
+        },
+        "scenarios": {
+            "description": "Guiding business model design in specific future contexts",
+            "types": [
+                "Product/service settings",
+                "Market segments",
+                "Industry restructuring"
+            ]
+        }
+    },
+    "strategy": {
+        "business_model_environment": {
+            "forces": [
+                {
+                    "name": "Market Forces",
+                    "elements": [
+                        "Market Segments",
+                        "Needs and Demands",
+                        "Market Issues",
+                        "Switching Costs",
+                        "Revenue Attractiveness"
+                    ]
+                },
+                {
+                    "name": "Industry Forces",
+                    "elements": [
+                        "Competitors",
+                        "New Entrants",
+                        "Substitute Products",
+                        "Suppliers",
+                        "Stakeholders"
+                    ]
+                },
+                {
+                    "name": "Key Trends",
+                    "elements": [
+                        "Technology Trends",
+                        "Regulatory Trends",
+                        "Societal Trends",
+                        "Socioeconomic Trends"
+                    ]
+                },
+                {
+                    "name": "Macroeconomic Forces",
+                    "elements": [
+                        "Global Market Conditions",
+                        "Capital Markets",
+                        "Commodities",
+                        "Economic Infrastructure"
+                    ]
+                }
+            ]
+        },
+        "blue_ocean_strategy": {
+            "concept": "Creating uncontested market space by differentiation AND cost leadership",
+            "four_actions": [
+                "Eliminate",
+                "Reduce",
+                "Raise",
+                "Create"
+            ],
+            "outcome": "Value Innovation - Making competition irrelevant"
+        },
+        "managing_multiple_models": {
+            "challenges": [
+                "Conflict",
+                "Synergy",
+                "Autonomy vs Integration"
+            ],
+            "strategies": [
+                "Separation",
+                "Integration",
+                "Phased transformation"
+            ]
+        }
+    }
+}

@@ -20,6 +20,7 @@ export class DesignAgent extends BaseAgent {
             emoji: '🎨',
             color: '#ec4899',
             category: 'design',
+            folderName: 'DesignAgent',
             skills: [
                 'UI/UX Design',
                 'Visual Design',
@@ -34,11 +35,20 @@ export class DesignAgent extends BaseAgent {
         });
     }
 
-    /**
-     * Handle incoming task
-     */
     async handleTask(task) {
         logger.info(`${this.name}: Handling task: ${task.description}`);
+
+        // Delegate to Python if it's one of the expert skills
+        const expertTaskTypes = ['create_design', 'analyze_design', 'critique', 'implement_design'];
+        if (expertTaskTypes.includes(task.type)) {
+            logger.info(`${this.name}: Delegating ${task.type} to Python expert implementation`);
+            try {
+                const result = await this.executeTask(task);
+                if (result) return result;
+            } catch (error) {
+                logger.warn(`${this.name}: Python delegation failed, falling back to JS implementation`, error);
+            }
+        }
 
         switch (task.type) {
             case 'create_design':
@@ -67,16 +77,16 @@ export class DesignAgent extends BaseAgent {
         try {
             // Analyze requirements to determine design style
             const designStyle = this.analyzeDesignRequirements(requirements || description);
-            
+
             // Retrieve relevant knowledge from previous learnings
             const relevantKnowledge = await this.retrieveRelevantKnowledge(designStyle);
-            
+
             // Generate main design concept
             const mainDesign = this.generateDesignConcept(description, designStyle, relevantKnowledge);
-            
+
             // Generate 5 alternative designs
             const alternatives = this.generateAlternativeDesigns(description, designStyle, 5);
-            
+
             // Create design recommendation with images
             const recommendation = {
                 title: `Design Proposal: ${mainDesign.title}`,
@@ -140,7 +150,7 @@ export class DesignAgent extends BaseAgent {
      */
     analyzeDesignRequirements(requirements) {
         const req = requirements.toLowerCase();
-        
+
         const styles = {
             modern: ['modern', 'clean', 'minimal', 'sleek', 'contemporary'],
             playful: ['fun', 'playful', 'colorful', 'vibrant', 'friendly'],
@@ -225,7 +235,7 @@ export class DesignAgent extends BaseAgent {
         };
 
         const baseConcept = concepts[style] || concepts.modern;
-        
+
         return {
             ...baseConcept,
             description: `A ${style} design approach for ${description}. ${baseConcept.concept}.` +
@@ -239,7 +249,7 @@ export class DesignAgent extends BaseAgent {
     generateAlternativeDesigns(description, primaryStyle, count = 5) {
         const allStyles = ['modern', 'playful', 'professional', 'elegant', 'technical'];
         const alternativeStyles = allStyles.filter(s => s !== primaryStyle).slice(0, count);
-        
+
         return alternativeStyles.map(style => {
             const concept = this.generateDesignConcept(description, style, []);
             return {
@@ -264,7 +274,7 @@ export class DesignAgent extends BaseAgent {
      */
     async analyzeDesign(task) {
         const { filePath, url, imageData } = task.requirements || {};
-        
+
         logger.info(`${this.name}: Analyzing design reference`);
 
         try {
@@ -301,7 +311,7 @@ export class DesignAgent extends BaseAgent {
      */
     async storeDesignReference(task) {
         const { title, description, filePath, url, imageData, tags } = task.requirements || {};
-        
+
         logger.info(`${this.name}: Storing design reference: ${title}`);
 
         try {
@@ -359,8 +369,11 @@ export class DesignAgent extends BaseAgent {
 
         const lowerMessage = message.toLowerCase();
 
-        // Check if asking for design recommendations
-        if (lowerMessage.includes('design') && (lowerMessage.includes('recommend') || lowerMessage.includes('suggest') || lowerMessage.includes('create'))) {
+        // If it's a specific request for recommendations, use the internal logic
+        // but make it cross-lingual by checking for general intent
+        const isRequestingDesign = /design|recomend|suggest|sugest|criar|create|da me|give me/i.test(lowerMessage);
+
+        if (isRequestingDesign) {
             const result = await this.createDesignRecommendation({
                 description: message,
                 requirements: message,
@@ -373,10 +386,9 @@ export class DesignAgent extends BaseAgent {
                 response += `Color Palette: ${result.recommendation.mainDesign.colorPalette.join(', ')}\n`;
                 response += `Typography: ${result.recommendation.mainDesign.typography}\n\n`;
                 response += `I've also prepared ${result.recommendation.alternatives.length} alternative design concepts for you to consider.\n`;
-                
+
                 if (result.recommendation.knowledgeUsed.length > 0) {
-                    response += `\n📚 *Knowledge Applied:* This recommendation draws from ${result.recommendation.knowledgeUsed.length} reference(s) in my knowledge base: `;
-                    response += result.recommendation.knowledgeUsed.map(k => k.source).join(', ');
+                    response += `\n📚 *Knowledge Applied:* This recommendation draws from ${result.recommendation.knowledgeUsed.length} reference(s) in my knowledge base.`;
                 }
 
                 return {
@@ -387,16 +399,14 @@ export class DesignAgent extends BaseAgent {
             }
         }
 
-        // Default response
-        return {
-            success: true,
-            response: "I'm your design specialist! I can help you with:\n" +
-                     "- Creating design recommendations with visual examples\n" +
-                     "- Analyzing design references\n" +
-                     "- Providing multiple design alternatives\n" +
-                     "- Storing and learning from design materials\n\n" +
-                     "Just ask me to create a design or analyze something!"
-        };
+        // For everything else, use the standard LLM response via base agent
+        // but with design-specific context added to the prompt
+        return await super.handleChatMessage(
+            `[DESIGN CONTEXT: You are a UI/UX expert. Respond to this message staying in character and focusing on design value.] ${message}`,
+            conversationHistory,
+            taskContext,
+            projectId
+        );
     }
 }
 

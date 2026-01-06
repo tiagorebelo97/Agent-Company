@@ -49,6 +49,9 @@ model Project {
   assignedAgents  String?  @default("[]") // JSON array of agent IDs currently on project
   reports         String?  @default("[]") // JSON array of report objects
   localPath       String?                // Local path to the repository
+  businessModel   String?  @default("{}") // JSON string for Business Model Canvas
+  aiAnalysis      String?  @default("{}") // JSON string for Multi-Agent AI Analysis
+  lastAnalyzedAt  DateTime?               // Timestamp of last multi-agent analysis
   
   tasks            Task[]
   recommendations  Recommendation[]

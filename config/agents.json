@@ -551,5 +551,25 @@
             "Live Data Streams"
         ],
         "category": "development"
+    },
+    {
+        "id": "strategy",
+        "name": "Strategy Agent",
+        "role": "Business Model Canvas & Strategic Planning",
+        "color": "#f59e0b",
+        "emoji": "🎯",
+        "skills": [
+            "Business Model Canvas",
+            "Value Proposition Design",
+            "Revenue Streams Analysis",
+            "Competitive Analysis",
+            "Blue Ocean Strategy",
+            "SWOT Analysis",
+            "Market Positioning"
+        ],
+        "category": "business",
+        "mcps": [
+            "filesystem"
+        ]
     }
 ]

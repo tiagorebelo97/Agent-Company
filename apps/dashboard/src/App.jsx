@@ -6,6 +6,7 @@ import TaskBoard from './components/TaskBoard';
 import ProjectWorkspace from './components/ProjectWorkspace';
 import ConnectionStatus from './components/ConnectionStatus';
 import { ToastProvider } from './components/ToastProvider';
+import BusinessModel from './components/BusinessModel';
 import { Users, ListTodo, LayoutDashboard, Rocket, MessageSquare, BarChart3, Settings } from 'lucide-react';
 
 const API_URL = 'http://localhost:3001';
@@ -165,6 +166,33 @@ function App() {
         { id: 'analytics', label: 'Analytics', icon: BarChart3, color: '#f59e0b' },
     ];
 
+    const handleGenerateBusinessModel = async (projectId) => {
+        const project = projects.find(p => p.id === projectId);
+        if (!project) return;
+
+        try {
+            const response = await fetch(`${API_URL}/api/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: `Create Business Model Canvas for ${project.name}`,
+                    description: `Use Osterwalder's methodology to create a comprehensive Business Model Canvas for the project ${project.name}.`,
+                    projectId: project.id,
+                    assignedToId: 'strategy',
+                    type: 'business_model_canvas',
+                    priority: 'high'
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                // Show success toast
+                console.log('Task created successfully');
+            }
+        } catch (error) {
+            console.error('Error creating task:', error);
+        }
+    };
+
     return (
         <ToastProvider>
             <div style={{
@@ -245,6 +273,7 @@ function App() {
                             socket={socket}
                             refreshTasks={refreshTasks}
                             refreshProjects={refreshProjects}
+                            onGenerateBusinessModel={handleGenerateBusinessModel}
                         />
                     )}
 
@@ -269,6 +298,7 @@ function App() {
                             <p>Real-time performance metrics and token usage monitoring across the swarm.</p>
                         </div>
                     )}
+
                 </div>
 
                 <ConnectionStatus socket={socket} />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, FileText, Image, Video, Link as LinkIcon, BookOpen, X, Check } from 'lucide-react';
+import KnowledgeUploader from './KnowledgeUploader';
 
 const AgentKnowledgeManager = ({ agentId, agentName, onClose }) => {
     const [knowledge, setKnowledge] = useState([]);
@@ -198,6 +199,9 @@ const AgentKnowledgeManager = ({ agentId, agentName, onClose }) => {
                     </div>
                 )}
 
+                {/* Knowledge Uploader */}
+                <KnowledgeUploader agentId={agentId} onUploadComplete={fetchKnowledge} />
+
                 {/* Add New Button */}
                 {!isAdding && (
                     <button
@@ -296,8 +300,8 @@ const AgentKnowledgeManager = ({ agentId, agentName, onClose }) => {
                                     onChange={(e) => setNewKnowledge({ ...newKnowledge, content: e.target.value })}
                                     placeholder={
                                         newKnowledge.type === 'text' ? 'Enter knowledge text...' :
-                                        newKnowledge.type === 'url' ? 'https://...' :
-                                        'File path or URL'
+                                            newKnowledge.type === 'url' ? 'https://...' :
+                                                'File path or URL'
                                     }
                                     rows={4}
                                     style={{

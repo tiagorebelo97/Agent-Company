@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { Search, BookOpen } from 'lucide-react';
 import AgentChatModal from './AgentChatModal';
+import AgentKnowledgeManager from './AgentKnowledgeManager';
 
 const AgentMatrix = ({ agents, socket }) => {
     const [filter, setFilter] = useState('all');
@@ -8,6 +9,7 @@ const AgentMatrix = ({ agents, socket }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
+    const [knowledgeAgent, setKnowledgeAgent] = useState(null);
 
     // Track loading state
     useEffect(() => {
@@ -271,6 +273,34 @@ const AgentMatrix = ({ agents, socket }) => {
                                 </span>
                             </div>
 
+                            {/* Knowledge Button */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setKnowledgeAgent(agent);
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    top: '60px',
+                                    right: '28px',
+                                    background: 'none',
+                                    border: 'none',
+                                    color: colors.textMuted,
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: '10px',
+                                    fontWeight: 700
+                                }}
+                                onMouseEnter={(e) => e.target.style.color = colors.primary}
+                                onMouseLeave={(e) => e.target.style.color = colors.textMuted}
+                            >
+                                <BookOpen size={14} />
+                                KNOW
+                            </button>
+
                             {/* Agent Info */}
                             <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', paddingRight: '70px' }}>
                                 {/* Emoji Icon */}
@@ -369,6 +399,14 @@ const AgentMatrix = ({ agents, socket }) => {
                         setSelectedAgent(null);
                     }}
                     socket={socket}
+                />
+            )}
+            {/* Agent Knowledge Modal */}
+            {knowledgeAgent && (
+                <AgentKnowledgeManager
+                    agentId={knowledgeAgent.id}
+                    agentName={knowledgeAgent.name}
+                    onClose={() => setKnowledgeAgent(null)}
                 />
             )}
         </div>
