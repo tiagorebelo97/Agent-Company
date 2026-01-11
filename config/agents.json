@@ -571,5 +571,33 @@
         "mcps": [
             "filesystem"
         ]
+    },
+    {
+        "id": "product",
+        "name": "Product Agent",
+        "role": "Product Optimization & Strategy",
+        "color": "#fbbf24",
+        "emoji": "📦",
+        "skills": [
+            "Feature Improvement",
+            "Product Roadmap",
+            "Backlog Prioritization",
+            "User Story Mapping"
+        ],
+        "category": "business"
+    },
+    {
+        "id": "innovation",
+        "name": "Innovation Agent",
+        "role": "Radical Innovation & Disruption",
+        "color": "#ec4899",
+        "emoji": "🚀",
+        "skills": [
+            "Radical Innovation",
+            "Moonshot Ideas",
+            "Market Disruption",
+            "Future Scouting"
+        ],
+        "category": "research"
     }
 ]

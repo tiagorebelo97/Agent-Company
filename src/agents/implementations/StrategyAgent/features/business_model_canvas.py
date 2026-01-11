@@ -217,21 +217,38 @@ class BusinessModelCanvasSkill:
                 blocks_info = "\n".join([f"- {k}: {v['question']}" for k, v in canvas.items() if isinstance(v, dict) and 'question' in v])
                 
                 prompt = f"""
-                You are a senior business strategist. Generate a detailed Business Model Canvas for the project:
+                You are a senior business strategist. Generate a RADICALLY UNIQUE Business Model Canvas for:
                 Name: {project_name}
                 Description: {project_description}
                 Domain: {domain}
 
-                Please provide 4-6 key points for EACH of these building blocks:
+                CRITICAL INSTRUCTIONS:
+                1. AVOID GENERIC SaaS TEMPLATES. If the project isn't a pure SaaS, do not force it into one.
+                2. IDENTIFY THE UNIQUE ECONOMIC ENGINE: Is it Transactional (fees), Industrial (efficiency), Tokenized (usage), or Multi-sided (marketplace)?
+                3. SPECIFICITY: Use industry-specific terms (e.g., 'BoQ' for construction, 'TTV' for ticketing, 'Inference costs' for AI).
+                4. NO DESIRED STATE: Describe a realistic business, not a generic "perfect" startup.
+
+                Please provide 4-6 HIGH-FIDELITY points for EACH of these building blocks:
                 {blocks_info}
 
                 CRITICAL: You MUST return ONLY a JSON object with this structure:
                 {{
-                  "customer_segments": ["Point 1", "Point 2", ...],
+                  "metadata": {{
+                    "generated_by": "Strategy Agent + Gemini AI (Hybrid Swarm)",
+                    "version": "6.0",
+                    "economic_engine": "Identify the engine here (Transactional, Industrial, or Usage-based SaaS)"
+                  }},
+                  "customer_segments": ["Specific Segment 1", ...],
                   "value_propositions": [...],
                   "channels": [...],
                   "customer_relationships": [...],
-                  "revenue_streams": [...],
+                  "revenue_streams": {{
+                    "points": ["Stream 1", ...],
+                    "pricing_table": {{
+                         "headers": ["Header 1", "Header 2", ...],
+                         "rows": [["Value 1", "Value 2", ...], ...]
+                    }}
+                  }},
                   "key_resources": [...],
                   "key_activities": [...],
                   "key_partnerships": [...],
@@ -249,9 +266,19 @@ class BusinessModelCanvasSkill:
                 json_match = re.search(r'\{.*\}', str(response), re.DOTALL)
                 if json_match:
                     content_data = json.loads(json_match.group())
+                    
+                    # Update metadata first
+                    if 'metadata' in content_data:
+                        canvas['metadata'].update(content_data['metadata'])
+                        
                     for key, content in content_data.items():
+                        if key == 'metadata': continue
                         if key in canvas and isinstance(canvas[key], dict):
-                            canvas[key]['content'] = content
+                            if key == 'revenue_streams' and isinstance(content, dict):
+                                canvas[key]['content'] = content.get('points', [])
+                                canvas[key]['pricing_table'] = content.get('pricing_table', {})
+                            else:
+                                canvas[key]['content'] = content
                 
             except Exception as e:
                 self.agent.log(f"LLM Canvas generation failed: {str(e)}")
