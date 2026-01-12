@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, Download, Printer, TrendingUp, Users, DollarSign, Target, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, Download, Printer, TrendingUp, Users, DollarSign, Target, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 
 const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar }) => {
@@ -113,35 +113,115 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
         </div>
     );
 
-    const ContentList = ({ items }) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {items && items.map((item, i) => (
-                <div key={i} style={{
-                    padding: '20px 24px',
-                    backgroundColor: colors.card,
-                    borderLeft: `4px solid ${colors.primary}`,
-                    borderRadius: '8px',
-                    fontSize: '15px',
-                    lineHeight: '1.7',
-                    color: 'rgba(255,255,255,0.9)'
-                }}>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                        <span style={{
-                            color: colors.primary,
-                            fontWeight: 700,
-                            fontSize: '18px',
-                            minWidth: '24px'
-                        }}>
-                            {i + 1}.
-                        </span>
-                        <div style={{ flex: 1 }}>
-                            {typeof item === 'object' ? item.text || JSON.stringify(item) : item}
+    const ContentList = ({ items }) => {
+        const [expandedIndex, setExpandedIndex] = useState(null);
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {items && items.map((item, i) => {
+                    const isObject = typeof item === 'object' && item !== null && !Array.isArray(item);
+                    const title = isObject ? (item.title || item.text) : item;
+                    const description = isObject ? item.description : null;
+                    const bullets = isObject ? item.bullets : null;
+                    const isExpanded = expandedIndex === i;
+                    const hasDetails = description || (bullets && bullets.length > 0);
+
+                    return (
+                        <div key={i}
+                            onClick={() => hasDetails && setExpandedIndex(isExpanded ? null : i)}
+                            style={{
+                                padding: '20px 24px',
+                                backgroundColor: isExpanded ? 'rgba(37, 99, 235, 0.05)' : colors.card,
+                                borderLeft: `4px solid ${colors.primary}`,
+                                border: isExpanded ? `1px solid ${colors.primary}40` : `1px solid transparent`,
+                                borderLeftWidth: '4px',
+                                borderRadius: '12px',
+                                fontSize: '15px',
+                                lineHeight: '1.7',
+                                color: 'rgba(255,255,255,0.9)',
+                                cursor: hasDetails ? 'pointer' : 'default',
+                                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}
+                            className="bmc-item"
+                        >
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                <span style={{
+                                    color: colors.primary,
+                                    fontWeight: 800,
+                                    fontSize: '18px',
+                                    minWidth: '28px',
+                                    opacity: 0.8
+                                }}>
+                                    {String(i + 1).padStart(2, '0')}
+                                </span>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{
+                                        fontWeight: 700,
+                                        color: isExpanded ? colors.primary : '#ffffff',
+                                        fontSize: '16px',
+                                        marginBottom: isExpanded ? '12px' : '0',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        transition: 'all 0.3s'
+                                    }}>
+                                        <span>{title}</span>
+                                        {hasDetails && (
+                                            <ChevronDown size={18} style={{
+                                                opacity: 0.5,
+                                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                transition: 'transform 0.4s ease'
+                                            }} />
+                                        )}
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div style={{
+                                            marginTop: '12px',
+                                            paddingTop: '12px',
+                                            borderTop: '1px solid rgba(255,255,255,0.06)',
+                                            animation: 'fadeIn 0.4s ease'
+                                        }}>
+                                            <p style={{
+                                                margin: '0 0 16px 0',
+                                                color: 'rgba(255,255,255,0.7)',
+                                                fontSize: '14px',
+                                                lineHeight: '1.6'
+                                            }}>
+                                                {description}
+                                            </p>
+
+                                            {bullets && bullets.length > 0 && (
+                                                <ul style={{
+                                                    margin: 0,
+                                                    paddingLeft: '18px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '8px'
+                                                }}>
+                                                    {bullets.map((bullet, idx) => (
+                                                        <li key={idx} style={{
+                                                            fontSize: '13px',
+                                                            color: 'rgba(255,255,255,0.6)',
+                                                            listStyleType: 'square'
+                                                        }}>
+                                                            {bullet}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
+                    );
+                })}
+            </div>
+        );
+    };
 
     const Table = ({ headers, rows }) => (
         <div style={{ overflowX: 'auto', marginTop: '20px' }}>
@@ -438,32 +518,57 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                 <Section title="Fontes de Receita" icon={DollarSign}>
                     <ContentList items={canvasData.revenue_streams?.content || []} />
 
-                    {/* Pricing Table */}
+                    {/* Dynamic Pricing / Fee Structure Table */}
                     <div style={{ marginTop: '32px' }}>
                         <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
-                            Tabela de Preços SaaS
+                            {canvasData.metadata?.economic_engine?.includes('Transactional') ? 'Estrutura de Taxas e Comissões' :
+                                canvasData.metadata?.economic_engine?.includes('Industrial') ? 'Modelo de Licenciamento Industrial' :
+                                    'Tabela de Preços e Planos'}
                         </h3>
-                        {canvasData.revenue_streams?.pricing_table && canvasData.revenue_streams.pricing_table.headers ? (
-                            <Table
-                                headers={canvasData.revenue_streams.pricing_table.headers}
-                                rows={canvasData.revenue_streams.pricing_table.rows}
-                            />
-                        ) : canvasData.pricing_table ? (
-                            <Table
-                                headers={['Plano', 'Preço', 'Funcionalidades']}
-                                rows={canvasData.pricing_table.map(p => [p.tier || p.plan, p.price, p.features])}
-                            />
-                        ) : (
-                            <Table
-                                headers={['Plano', 'Preço/Mês', 'Utilizadores', 'Projetos', 'Features Principais']}
+                        {(() => {
+                            if (canvasData.revenue_streams?.pricing_table && canvasData.revenue_streams.pricing_table.headers) {
+                                return <Table
+                                    headers={canvasData.revenue_streams.pricing_table.headers}
+                                    rows={canvasData.revenue_streams.pricing_table.rows}
+                                />;
+                            }
+
+                            // Default Fallbacks based on Project DNA
+                            if (canvasData.metadata?.economic_engine?.includes('Transactional')) {
+                                return <Table
+                                    headers={['Tipo de Operação', 'Taxa / Valor', 'Racional de Valor']}
+                                    rows={[
+                                        ['Emissão de Bilhete Primário', '€1.20 - €2.50', 'Taxa de conveniência por transação'],
+                                        ['Revenda no Mercado Secundário', '12% del valor', 'Royalties partilhados com o Clube'],
+                                        ['Setup de Estádio (NFC/Access)', '€25k - €100k', 'Integração de hardware e torniquetes'],
+                                        ['Publicidade in-App Day-of-Match', 'CPM variável', 'Monetização de audiência cativa']
+                                    ]}
+                                />;
+                            }
+
+                            if (canvasData.metadata?.economic_engine?.includes('Industrial')) {
+                                return <Table
+                                    headers={['Nível de Licença', 'Custo Base', 'Taxa Volumétrica (GAV)', 'Serviços Incluídos']}
+                                    rows={[
+                                        ['Standard Project HQ', '€250/mês', '0.05% > €1M', 'Parsing BoQ básico, 5 utilizadores'],
+                                        ['Professional Builder', '€750/mês', '0.03% > €500k', 'IA avançada, Benchmarking de custos'],
+                                        ['Enterprise Sovereign', 'Custom', 'Sob consulta', 'VPC/On-premise, Auditoria legal total'],
+                                        ['Setup & Migration', '€5k+', 'One-off', 'Digitalização de histórico de obras']
+                                    ]}
+                                />;
+                            }
+
+                            // Default SaaS / Agent fallback
+                            return <Table
+                                headers={['Plano / Tier', 'Preço Base', 'Usage (Tokens)', 'Funcionalidades Principais']}
                                 rows={[
-                                    ['FREE', '€0', '1', '3', 'Features básicas, 5GB storage'],
-                                    ['STARTER', '€29', 'Ilimitado', '10', 'Categorização automática, 50GB'],
-                                    ['PRO', '€79', 'Ilimitado', 'Ilimitado', 'IA avançada, API, 500GB'],
-                                    ['ENTERPRISE', '€149', 'Ilimitado', 'Ilimitado', 'SSO, SLA 99.9%, suporte 24/7']
+                                    ['Starter Builder', '€49/mês', 'Incluído 10M', 'Acesso a 5 Agentes, Vault básico'],
+                                    ['Pro Orchestrator', '€149/mês', '€0.05/1M extra', 'Enxames ilimitados, Model Arbitrage'],
+                                    ['Enterprise Vault', '€999/mês+', 'Custom volume', 'SSO, Isolamento total, Suporte VIP'],
+                                    ['Marketplace Agent', 'Varia', '30% commission', 'Venda de agentes criados por terceiros']
                                 ]}
-                            />
-                        )}
+                            />;
+                        })()}
                     </div>
                 </Section>
 
@@ -481,41 +586,51 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                 📊 Metodologia: {canvasData.financial_projections.methodology}
                             </div>
                             <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>
-                                Projeções baseadas em análise de mercado, benchmarking de SaaS similares e assumptions conservadoras de crescimento.
+                                {canvasData.executive_summary?.paragraphs?.[0]?.includes('SaaS') ?
+                                    'Projeções baseadas em benchmarks setoriais e modelos de crescimento recursivo.' :
+                                    'Análise financeira baseada em volumes transacionais e métricas de eficiência operacional do setor.'}
                             </div>
                         </div>
 
-                        {/* Market Size */}
-                        <div style={{ marginBottom: '32px' }}>
-                            <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
-                                Dimensão de Mercado
-                            </h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-                                <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.primary}` }}>
-                                    <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>TAM (Total Addressable Market)</div>
-                                    <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
-                                        {canvasData.financial_projections.assumptions.market_size.tam}
-                                    </div>
-                                </div>
-                                <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.secondary}` }}>
-                                    <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>SAM (Serviceable Available Market)</div>
-                                    <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
-                                        {canvasData.financial_projections.assumptions.market_size.sam}
-                                    </div>
-                                </div>
-                                <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.accent}` }}>
-                                    <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>SOM (Serviceable Obtainable Market)</div>
-                                    <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
-                                        {canvasData.financial_projections.assumptions.market_size.som}
-                                    </div>
+                        {/* Market Size - Optional & Safe */}
+                        {canvasData.financial_projections.assumptions?.market_size && (
+                            <div style={{ marginBottom: '32px' }}>
+                                <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
+                                    Dimensão de Mercado
+                                </h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                                    {canvasData.financial_projections.assumptions.market_size.tam && (
+                                        <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.primary}` }}>
+                                            <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>TAM (Total Addressable Market)</div>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
+                                                {canvasData.financial_projections.assumptions.market_size.tam}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {canvasData.financial_projections.assumptions.market_size.sam && (
+                                        <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.secondary}` }}>
+                                            <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>SAM (Serviceable Available Market)</div>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
+                                                {canvasData.financial_projections.assumptions.market_size.sam}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {canvasData.financial_projections.assumptions.market_size.som && (
+                                        <div style={{ padding: '20px', backgroundColor: colors.card, borderRadius: '12px', borderLeft: `4px solid ${colors.accent}` }}>
+                                            <div style={{ fontSize: '12px', color: colors.textMuted, marginBottom: '8px' }}>SOM (Serviceable Obtainable Market)</div>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>
+                                                {canvasData.financial_projections.assumptions.market_size.som}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Monthly Projections */}
                         <div style={{ marginBottom: '32px' }}>
                             <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
-                                Projeções Mensais - Ano 1 (MRR - Monthly Recurring Revenue)
+                                Projeções Detalhadas - Ano Inicial
                             </h3>
                             <RevenueChart data={canvasData.financial_projections.monthly_projections_year1} type="monthly" />
                         </div>
@@ -523,26 +638,64 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                         {/* Annual Projections */}
                         <div style={{ marginBottom: '32px' }}>
                             <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'white', marginBottom: '16px' }}>
-                                Projeções Anuais - 3 Anos
+                                Projeções Multianuais ({canvasData.financial_projections.annual_projections.length} Anos)
                             </h3>
                             <RevenueChart data={canvasData.financial_projections.annual_projections} type="annual" />
 
-                            {/* Detailed Annual Table */}
+                            {/* Detailed Annual Table - Now Dynamic */}
                             <div style={{ marginTop: '24px' }}>
-                                <Table
-                                    headers={['Ano', 'Receita Total', 'MRR (fim)', 'ARR', 'Clientes', 'CAC', 'LTV', 'LTV/CAC', 'Margem']}
-                                    rows={canvasData.financial_projections.annual_projections.map(year => [
-                                        `Ano ${year.year}`,
-                                        `€${(year.total_revenue / 1000).toFixed(0)}k`,
-                                        `€${(year.metrics.mrr_end / 1000).toFixed(0)}k`,
-                                        `€${(year.metrics.arr / 1000).toFixed(0)}k`,
-                                        year.customers.starter + year.customers.pro + year.customers.enterprise,
-                                        `€${year.metrics.cac}`,
-                                        `€${year.metrics.ltv}`,
-                                        year.metrics.ltv_cac_ratio.toFixed(1),
-                                        year.metrics.gross_margin
-                                    ])}
-                                />
+                                {(() => {
+                                    const allMetrics = canvasData.financial_projections.annual_projections.map(y => y.metrics || {});
+                                    const allKeys = [...new Set(allMetrics.flatMap(m => Object.keys(m)))];
+
+                                    // Custom header mapping for common keys
+                                    const headerLabels = {
+                                        'mrr_end': 'MRR (Fim)',
+                                        'arr': 'ARR',
+                                        'cac': 'CAC',
+                                        'ltv': 'LTV',
+                                        'ltv_cac_ratio': 'LTV/CAC',
+                                        'gross_margin': 'Margem',
+                                        'efficiency_gain_to_client': 'Ganhos Eficiência',
+                                        'avg_order_value': 'Ticket Médio',
+                                        'tickets_sold': 'Bilhetes',
+                                        'revenue_per_fan': 'Rec./Adepto',
+                                        'tokens_processed': 'Tokens',
+                                        'active_agents': 'Agentes IA'
+                                    };
+
+                                    const tableHeaders = ['Ano', 'Receita Total', 'Propriedades/Pessoas', ...allKeys.map(k => headerLabels[k] || k.replace(/_/g, ' '))];
+
+                                    const tableRows = canvasData.financial_projections.annual_projections.map(year => {
+                                        const customerCount = year.customers ?
+                                            (typeof year.customers === 'object' ?
+                                                Object.values(year.customers).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
+                                                : year.customers)
+                                            : 'N/A';
+
+                                        const cells = [
+                                            `Ano ${year.year}`,
+                                            `€${(year.total_revenue / 1000).toFixed(0)}k`,
+                                            customerCount
+                                        ];
+
+                                        // Add dynamic metric cells
+                                        allKeys.forEach(key => {
+                                            const val = year.metrics?.[key];
+                                            if (val === undefined || val === null) {
+                                                cells.push('-');
+                                            } else if (typeof val === 'number') {
+                                                cells.push(val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val.toString());
+                                            } else {
+                                                cells.push(val.toString());
+                                            }
+                                        });
+
+                                        return cells;
+                                    });
+
+                                    return <Table headers={tableHeaders} rows={tableRows} />;
+                                })()}
                             </div>
                         </div>
 
@@ -552,7 +705,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                 Cenários de Crescimento (Ano 3)
                             </h3>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                                {Object.entries(canvasData.financial_projections.scenarios).map(([key, scenario]) => (
+                                {Object.entries(canvasData.financial_projections.scenarios || {}).map(([key, scenario]) => (
                                     <div key={key} style={{
                                         padding: '20px',
                                         backgroundColor: colors.card,
@@ -560,16 +713,16 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                         border: key === 'base' ? `2px solid ${colors.primary}` : `1px solid ${colors.border}`
                                     }}>
                                         <div style={{ fontSize: '16px', fontWeight: 700, color: 'white', marginBottom: '8px', textTransform: 'capitalize' }}>
-                                            {key === 'conservative' ? '🐢 Conservador' : key === 'base' ? '🎯 Base' : '🚀 Otimista'}
+                                            {key === 'conservative' || key === 'pessimista' ? '🐢 Conservador' : key === 'base' ? '🎯 Base' : '🚀 Otimista'}
                                         </div>
                                         <div style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '12px' }}>
                                             {scenario.description}
                                         </div>
                                         <div style={{ fontSize: '24px', fontWeight: 800, color: colors.primary, marginBottom: '4px' }}>
-                                            €{(scenario.year3_revenue / 1000000).toFixed(1)}M
+                                            {scenario.year3_revenue ? `€${(scenario.year3_revenue / 1000000).toFixed(1)}M` : (scenario.target || 'N/A')}
                                         </div>
                                         <div style={{ fontSize: '12px', color: colors.textMuted }}>
-                                            {scenario.year3_customers} clientes
+                                            {scenario.year3_customers || 'Target Estratégico'}
                                         </div>
                                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
                                             {scenario.assumptions}
@@ -585,7 +738,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                                 Métricas-Chave e Targets
                             </h3>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                                {Object.entries(canvasData.financial_projections.key_metrics_targets).map(([key, value]) => (
+                                {Object.entries(canvasData.financial_projections.key_metrics_targets || {}).map(([key, value]) => (
                                     <div key={key} style={{ padding: '16px', backgroundColor: colors.card, borderRadius: '8px' }}>
                                         <div style={{ fontSize: '11px', color: colors.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>
                                             {key.replace(/_/g, ' ')}
@@ -650,7 +803,7 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                     </div>
                 </Section>
 
-                {/* Footer */}
+                {/* Footer Metadata */}
                 <div style={{
                     marginTop: '64px',
                     paddingTop: '32px',
@@ -659,11 +812,14 @@ const BusinessModelDocument = ({ projects = [], refreshProjects, onToggleSidebar
                     color: colors.textMuted,
                     fontSize: '14px'
                 }}>
-                    <p style={{ margin: 0 }}>
-                        Documento gerado automaticamente pelo Mason Business Model Canvas Generator
+                    <p style={{ margin: 0, fontWeight: 600 }}>
+                        {canvasData.metadata?.generated_by || 'Strategy Agent + Gemini AI (Hybrid Swarm)'}
                     </p>
-                    <p style={{ margin: '8px 0 0 0' }}>
-                        © 2025 {activeProject?.name || 'Mason'} - Todos os direitos reservados
+                    <p style={{ margin: '8px 0 0 0', fontSize: '12px' }}>
+                        Versão: {canvasData.metadata?.version || '6.0'} - {activeProject?.name || 'Project'} Strategic Blueprint
+                    </p>
+                    <p style={{ margin: '8px 0 0 0', opacity: 0.6, fontSize: '11px' }}>
+                        © 2026 Agent Company Platform - Análise Estratégica Industrial
                     </p>
                 </div>
             </div>

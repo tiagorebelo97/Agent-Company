@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lightbulb, CheckCircle, XCircle, Play, AlertTriangle, Filter } from 'lucide-react';
+import { Lightbulb, CheckCircle, XCircle, Play, AlertTriangle, Filter, ChevronDown } from 'lucide-react';
 
 const RecommendationsList = ({ projectId, agents = [] }) => {
     const [recommendations, setRecommendations] = useState([]);
@@ -7,6 +7,7 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState('all'); // all, pending, implemented, dismissed
     const [message, setMessage] = useState(null);
+    const [expandedId, setExpandedId] = useState(null);
 
     useEffect(() => {
         if (projectId) {
@@ -43,9 +44,12 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
         }
     };
 
+    const handleToggleExpand = (id) => {
+        setExpandedId(expandedId === id ? null : id);
+    };
+
     const handleImplement = async (recommendationId) => {
         try {
-            // For now, auto-assign PM agent - could be made more intelligent
             const response = await fetch(`http://localhost:3001/api/recommendations/${recommendationId}/implement`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -195,168 +199,247 @@ const RecommendationsList = ({ projectId, agents = [] }) => {
                         </div>
                     </div>
                 ) : (
-                    recommendations.map((rec) => (
-                        <div
-                            key={rec.id}
-                            style={{
-                                padding: '16px',
-                                backgroundColor: 'rgba(255,255,255,0.03)',
-                                border: `1px solid ${colors.border}`,
-                                borderLeft: `4px solid ${getPriorityColor(rec.priority)}`,
-                                borderRadius: '12px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '12px'
-                            }}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                        {getStatusIcon(rec.status)}
-                                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
-                                            {rec.title}
-                                        </h4>
-                                    </div>
-                                    <p style={{
-                                        margin: 0,
-                                        fontSize: '13px',
-                                        color: colors.textMuted,
-                                        lineHeight: '1.5'
-                                    }}>
-                                        {rec.description}
-                                    </p>
-                                </div>
-                                <div style={{ display: 'flex', gap: '4px', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                    <span style={{
-                                        padding: '4px 8px',
-                                        backgroundColor: `${getPriorityColor(rec.priority)}20`,
-                                        color: getPriorityColor(rec.priority),
-                                        borderRadius: '6px',
-                                        fontSize: '10px',
-                                        fontWeight: 800,
-                                        textTransform: 'uppercase'
-                                    }}>
-                                        {rec.priority}
-                                    </span>
-                                    {rec.category && (
-                                        <span style={{
-                                            padding: '4px 8px',
-                                            backgroundColor: 'rgba(255,255,255,0.05)',
+                    recommendations.map((rec) => {
+                        let metadata = {};
+                        try {
+                            metadata = typeof rec.metadata === 'string' ? JSON.parse(rec.metadata) : (rec.metadata || {});
+                        } catch (e) {
+                            console.error('Error parsing metadata', e);
+                        }
+
+                        const isExpanded = expandedId === rec.id;
+
+                        return (
+                            <div
+                                key={rec.id}
+                                style={{
+                                    padding: '16px',
+                                    backgroundColor: 'rgba(255,255,255,0.03)',
+                                    border: `1px solid ${colors.border}`,
+                                    borderLeft: `4px solid ${getPriorityColor(rec.priority)}`,
+                                    borderRadius: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                    transition: 'all 0.3s'
+                                }}
+                            >
+                                <div
+                                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}
+                                    onClick={() => handleToggleExpand(rec.id)}
+                                >
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                            {getStatusIcon(rec.status)}
+                                            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
+                                                {rec.title}
+                                            </h4>
+                                        </div>
+                                        <p style={{
+                                            margin: 0,
+                                            fontSize: '13px',
                                             color: colors.textMuted,
-                                            borderRadius: '6px',
-                                            fontSize: '10px',
-                                            fontWeight: 700
+                                            lineHeight: '1.5'
                                         }}>
-                                            {rec.category}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {rec.status === 'pending' && (
-                                <div style={{ display: 'flex', gap: '8px', paddingTop: '8px', borderTop: `1px solid ${colors.border}` }}>
-                                    <button
-                                        onClick={() => handleImplement(rec.id)}
-                                        style={{
-                                            flex: 1,
-                                            padding: '8px 16px',
-                                            backgroundColor: `${colors.primary}20`,
-                                            color: colors.primary,
-                                            border: `1px solid ${colors.primary}50`,
-                                            borderRadius: '8px',
-                                            fontSize: '12px',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        <Play size={14} />
-                                        Implement
-                                    </button>
-                                    <button
-                                        onClick={() => handleArchive(rec.id)}
-                                        style={{
-                                            padding: '8px 16px',
-                                            backgroundColor: 'rgba(255,255,255,0.03)',
-                                            color: colors.textMuted,
-                                            border: `1px solid ${colors.border}`,
-                                            borderRadius: '8px',
-                                            fontSize: '12px',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        Archive
-                                    </button>
-                                    <button
-                                        onClick={() => handleDismiss(rec.id)}
-                                        style={{
-                                            padding: '8px 16px',
-                                            backgroundColor: 'rgba(255,255,255,0.03)',
-                                            color: colors.textMuted,
-                                            border: `1px solid ${colors.border}`,
-                                            borderRadius: '8px',
-                                            fontSize: '12px',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        Dismiss
-                                    </button>
-                                </div>
-                            )}
-
-                            {rec.status === 'implemented' && rec.implementedAt && (
-                                <div style={{
-                                    fontSize: '11px',
-                                    color: colors.textMuted,
-                                    paddingTop: '8px',
-                                    borderTop: `1px solid ${colors.border}`
-                                }}>
-                                    <div>Implemented on {new Date(rec.implementedAt).toLocaleDateString()}</div>
-                                    {rec.taskId && (() => {
-                                        const task = tasks.find(t => t.id === rec.taskId);
-                                        if (task) {
-                                            return (
-                                                <div style={{
-                                                    marginTop: '6px',
-                                                    padding: '6px 10px',
+                                            {rec.description}
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', gap: '4px', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                            <span style={{
+                                                padding: '4px 8px',
+                                                backgroundColor: `${getPriorityColor(rec.priority)}20`,
+                                                color: getPriorityColor(rec.priority),
+                                                borderRadius: '6px',
+                                                fontSize: '10px',
+                                                fontWeight: 800,
+                                                textTransform: 'uppercase'
+                                            }}>
+                                                {rec.priority}
+                                            </span>
+                                            {rec.category && (
+                                                <span style={{
+                                                    padding: '4px 8px',
                                                     backgroundColor: 'rgba(255,255,255,0.05)',
+                                                    color: colors.textMuted,
                                                     borderRadius: '6px',
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center'
+                                                    fontSize: '10px',
+                                                    fontWeight: 700
                                                 }}>
-                                                    <span>📋 {task.title}</span>
-                                                    <span style={{
-                                                        padding: '2px 8px',
-                                                        backgroundColor: task.status === 'done' ? colors.success + '30' :
-                                                                       task.status === 'in_progress' ? colors.primary + '30' :
-                                                                       'rgba(255,255,255,0.1)',
-                                                        color: task.status === 'done' ? colors.success :
-                                                               task.status === 'in_progress' ? colors.primary :
-                                                               colors.textMuted,
-                                                        borderRadius: '6px',
-                                                        fontSize: '10px',
-                                                        fontWeight: 700
-                                                    }}>
-                                                        {task.status.replace('_', ' ')}
-                                                    </span>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    })()}
+                                                    {rec.category}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{
+                                            color: colors.textMuted,
+                                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                            transition: 'transform 0.2s'
+                                        }}>
+                                            <ChevronDown size={14} />
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                    ))
+
+                                {isExpanded && (
+                                    <div style={{
+                                        padding: '16px',
+                                        backgroundColor: 'rgba(255,255,255,0.02)',
+                                        borderRadius: '8px',
+                                        border: `1px solid rgba(255,255,255,0.05)`,
+                                        marginTop: '4px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '16px'
+                                    }}>
+                                        <div>
+                                            <div style={{ fontSize: '12px', fontWeight: 800, color: colors.primary, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Detailed Explanation
+                                            </div>
+                                            <p style={{ margin: 0, fontSize: '13px', color: colors.textMain, lineHeight: '1.6' }}>
+                                                {metadata.detailedExplanation || "No detailed explanation available."}
+                                            </p>
+                                        </div>
+
+                                        {metadata.implementationPlan && metadata.implementationPlan.length > 0 && (
+                                            <div>
+                                                <div style={{ fontSize: '12px', fontWeight: 800, color: colors.success, marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    Implementation Plan
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                    {metadata.implementationPlan.map((step, idx) => (
+                                                        <div key={idx} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                                            <div style={{
+                                                                width: '20px',
+                                                                height: '20px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: `${colors.success}20`,
+                                                                color: colors.success,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                fontSize: '10px',
+                                                                fontWeight: 800,
+                                                                flexShrink: 0,
+                                                                marginTop: '2px'
+                                                            }}>
+                                                                {idx + 1}
+                                                            </div>
+                                                            <div style={{ fontSize: '13px', color: colors.textMain, lineHeight: '1.5' }}>
+                                                                {step}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {rec.status === 'pending' && (
+                                    <div style={{ display: 'flex', gap: '8px', paddingTop: '8px', borderTop: `1px solid ${colors.border}` }}>
+                                        <button
+                                            onClick={() => handleImplement(rec.id)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px 16px',
+                                                backgroundColor: `${colors.primary}20`,
+                                                color: colors.primary,
+                                                border: `1px solid ${colors.primary}50`,
+                                                borderRadius: '8px',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Play size={14} />
+                                            Implement
+                                        </button>
+                                        <button
+                                            onClick={() => handleArchive(rec.id)}
+                                            style={{
+                                                padding: '8px 16px',
+                                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                                color: colors.textMuted,
+                                                border: `1px solid ${colors.border}`,
+                                                borderRadius: '8px',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            Archive
+                                        </button>
+                                        <button
+                                            onClick={() => handleDismiss(rec.id)}
+                                            style={{
+                                                padding: '8px 16px',
+                                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                                color: colors.textMuted,
+                                                border: `1px solid ${colors.border}`,
+                                                borderRadius: '8px',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                )}
+
+                                {rec.status === 'implemented' && rec.implementedAt && (
+                                    <div style={{
+                                        fontSize: '11px',
+                                        color: colors.textMuted,
+                                        paddingTop: '8px',
+                                        borderTop: `1px solid ${colors.border}`
+                                    }}>
+                                        <div>Implemented on {new Date(rec.implementedAt).toLocaleDateString()}</div>
+                                        {rec.taskId && (() => {
+                                            const task = tasks.find(t => t.id === rec.taskId);
+                                            if (task) {
+                                                return (
+                                                    <div style={{
+                                                        marginTop: '6px',
+                                                        padding: '6px 10px',
+                                                        backgroundColor: 'rgba(255,255,255,0.05)',
+                                                        borderRadius: '6px',
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center'
+                                                    }}>
+                                                        <span>📋 {task.title}</span>
+                                                        <span style={{
+                                                            padding: '2px 8px',
+                                                            backgroundColor: task.status === 'done' ? colors.success + '30' :
+                                                                task.status === 'in_progress' ? colors.primary + '30' :
+                                                                    'rgba(255,255,255,0.1)',
+                                                            color: task.status === 'done' ? colors.success :
+                                                                task.status === 'in_progress' ? colors.primary :
+                                                                    colors.textMuted,
+                                                            borderRadius: '6px',
+                                                            fontSize: '10px',
+                                                            fontWeight: 700
+                                                        }}>
+                                                            {task.status.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })
                 )}
             </div>
         </div>

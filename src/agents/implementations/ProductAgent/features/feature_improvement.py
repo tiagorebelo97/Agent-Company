@@ -69,81 +69,71 @@ class FeatureImprovementSkill:
         }
     
     def generate_improvements(self, context, bm):
-        # Extract key business model info
-        value_props = bm.get('value_propositions', []) if isinstance(bm, dict) else []
-        customer_segments = bm.get('customer_segments', []) if isinstance(bm, dict) else []
+        # Extract full business model details for deep context
+        bm_summary = ""
+        if isinstance(bm, dict):
+            for key, value in bm.items():
+                if key != 'metadata' and value:
+                    content = value.get('content', []) if isinstance(value, dict) else value
+                    bm_summary += f"\n- {key.replace('_', ' ').title()}: {content}"
         
         prompt = f"""
-You are a Product Manager specializing in iterative improvement and feature optimization.
+You are a Product Manager specializing in Business-Driven Product Growth.
 
-Analyze this project and suggest 3-5 incremental IMPROVEMENTS for existing or planned features.
+Analyze the following project and its Business Model Canvas (BMC) to suggest 3-5 FUNCTIONAL IMPROVEMENTS that directly enhance the business value and customer experience.
 
 Project Context: {context}
-Value Propositions: {value_props}
-Customer Segments: {customer_segments}
+
+Business Model Canvas Details:
+{bm_summary}
 
 Focus on:
-- UX/UI refinements that improve user experience
-- Performance optimizations
-- Feature deepening (adding more value to existing features)
-- Better alignment with value propositions
+1. FUNCTIONAL IMPROVEMENTS: New capabilities or enhancements to existing features that solve real user problems identified in 'Customer Segments'.
+2. VALUE PROPOSITION ALIGNMENT: Strengthening the 'Value Propositions' defined in the BMC.
+3. REVENUE GROWTH: Suggestions that could positively impact 'Revenue Streams'.
+4. CUSTOMER RETENTION: Improving 'Customer Relationships' through functional features.
 
-CRITICAL: You MUST return ONLY a valid JSON array. No markdown, no explanation, ONLY the JSON array.
+CRITICAL INSTRUCTIONS:
+- DO NOT suggest generic technical optimizations (like "optimize performance" or "refactor code") unless they are critical for a specific BUSINESS goal.
+- BE TIED TO THE PROJECT DNA: Use the specific context of the {context} and the provided BMC.
+- CATEGORIZATION: Use "Functional Improvement" as the category.
+
+You MUST return ONLY a valid JSON array. No markdown, no explanation, ONLY the JSON array.
 
 Format:
 [
   {{
-    "title": "Specific improvement title",
-    "description": "Detailed description of the improvement and its impact",
+    "title": "[Functional] Descriptive Title",
+    "description": "Detailed explanation of how this improvement helps specific BMC segments",
     "priority": "high",
-    "category": "Features to Improve"
-  }},
-  {{
-    "title": "Another improvement",
-    "description": "Description",
-    "priority": "medium",
-    "category": "Features to Improve"
+    "category": "Functional Improvement"
   }}
 ]
 
 Return ONLY the JSON array, nothing else.
 """
         try:
-            self.agent.log(f"Calling LLM with prompt length: {len(prompt)}")
-            self.agent.log(f"Business Model keys available: {list(bm.keys()) if isinstance(bm, dict) else 'Not a dict'}")
+            self.agent.log(f"Calling LLM for Functional Improvements. Prompt length: {len(prompt)}")
             
             response = self.agent.llm_manager.generate_response(
                 prompt=prompt,
-                system_context="You are a Product Manager. Return ONLY valid JSON array, no markdown formatting."
+                system_context="You are a Product Strategy Expert. Generate highly specific, non-generic functional improvements for the given business model. Return ONLY JSON."
             )
             
-            self.agent.log(f"LLM Response type: {type(response)}")
-            self.agent.log(f"LLM Response length: {len(str(response))}")
-            self.agent.log(f"LLM Response preview: {str(response)[:500]}")
-            
             import json, re
-            
-            # Try to extract JSON array from response
             response_str = str(response)
-            
-            # Remove markdown code blocks if present
             response_str = re.sub(r'```json\s*', '', response_str)
             response_str = re.sub(r'```\s*', '', response_str)
             
-            # Find JSON array
             match = re.search(r'\[.*\]', response_str, re.DOTALL)
             if match:
-                self.agent.log(f"Found JSON array in response")
                 parsed = json.loads(match.group())
-                self.agent.log(f"Successfully parsed {len(parsed)} items")
+                self.agent.log(f"Successfully parsed {len(parsed)} functional improvements")
                 return parsed
             else:
-                self.agent.log(f"No JSON array found in LLM response")
-                self.agent.log(f"Full response: {response_str}")
+                self.agent.log(f"No JSON array found in LLM response: {response_str[:200]}...")
         except Exception as e:
-            self.agent.log(f"Improvement generation failed: {str(e)}")
-            import traceback
-            self.agent.log(f"Traceback: {traceback.format_exc()}")
+            self.agent.log(f"Functional improvement generation failed: {str(e)}")
         return []
 
     def save_recommendations(self, project_id, recommendations):
